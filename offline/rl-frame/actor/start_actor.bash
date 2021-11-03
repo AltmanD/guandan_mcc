@@ -1,0 +1,1 @@
+python actor.py --config examples/ppo/pong_actor.yaml

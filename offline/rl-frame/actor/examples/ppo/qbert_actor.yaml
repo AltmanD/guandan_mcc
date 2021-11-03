@@ -1,0 +1,15 @@
+actor:
+  alg: ppo
+  env: QbertNoFrameskip-v4
+  num_steps: 10000000
+  ip: 127.0.0.1
+  data_port: 5002
+  param_port: 5003
+  num_replicas: 1
+  model: accnn
+  max_steps_per_update: 128
+  num_saved_ckpt: 10
+  num_envs: 10
+
+model:
+  model_id: policy_model

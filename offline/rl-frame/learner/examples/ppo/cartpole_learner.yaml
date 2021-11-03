@@ -1,0 +1,22 @@
+learner:
+  alg: ppo
+  env: CartPole-v1
+  num_steps: 200000
+  data_port: 5000
+  param_port: 5001
+  model: acmlp
+  pool_size: 4000
+  training_freq: 1
+  batch_size: 4000
+
+agent:
+  gamma: 0.97
+  lam: 0.98
+  pi_lr: 0.0003
+  vf_lr: 0.001
+  clip_range: 0.2
+  ent_coef: 0.01
+  epochs: 80
+  target_kl: 0.01
+  model:
+    model_id: policy_model
