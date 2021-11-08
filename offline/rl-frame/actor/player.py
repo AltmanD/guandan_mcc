@@ -27,13 +27,13 @@ class Player():
         self.mb_states, self.mb_actions, self.mb_rewards, self.mb_dones, self.mb_extras = [], [], [], [], []
         self.args = args
         self.unknown_args = unknown_args
-        self.init_time = time().time()
+        self.init_time = time.time()
         self.step = 0
         self.ip = args.ip
         self.data_port = args.data_port
 
         # 模型初始化
-        self.model = get_model(args)
+        # self.model = get_model(args)
         self.model_id = -1
 
         # log文件
@@ -49,7 +49,7 @@ class Player():
         subscriber.start()
 
         # 初始化模型
-        model_init_flag = 0
+        model_init_flag = 1
         while not model_init_flag:
             new_weights, self.model_id = find_new_weights(self.model_id, self.args.ckpt_path)
             if new_weights is not None:
@@ -137,10 +137,10 @@ class Player():
         return dict(zip(name, data))
     
     def play(self, state) -> int:
-        action = self.sample(state)
+        # action = self.sample(state)
 
-        # TODO:将action处理成action_index
-        action_index = action
+        # TODO:action解析
+        # action_index = action
 
         return 0
 
@@ -149,7 +149,7 @@ class MyClient(WebSocketClient):
     def __init__(self, url, args, unknown_args):
         super().__init__(url)
         self.state = State()
-        self.player = Player(args, unknown_args, )
+        self.player = Player(args, unknown_args)
         self.history_hand = {0: [], 1: [], 2: [], 3:[]}
 
     def opened(self):
@@ -165,16 +165,16 @@ class MyClient(WebSocketClient):
         self.state.parse(message)
         if "actionList" in message:
             # 记录history
-            self.history_hand[message['curPos']].append(message['curAction'][2])
+            # self.history_hand[message['curPos']].append(message['curAction'][2])
             # 做动作
             state = self.prepare(message, self.history_hand)
             act_index = self.player.play(state)
             self.send(json.dumps({"actIndex": act_index}))
-        if message['stage'] == 'episodeOver':
-            self.player.send_data(message)
-            self.history_hand = {0: [], 1: [], 2: [], 3:[]}
+        # if message['stage'] == 'episodeOver':
+        #     self.player.send_data(message)
+        #     self.history_hand = {0: [], 1: [], 2: [], 3:[]}
 
     def prepare(self, message, history):
-        # TODO:将message和history合成state
+        # TODO:state解析
         pass
 

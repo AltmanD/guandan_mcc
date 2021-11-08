@@ -1104,6 +1104,7 @@ class Action(object):
         else:
             return  0
 
+    # 进还贡
     def back_action(self, msg, mypos, tribute_result):
         rank = msg["curRank"]
         self.action = msg["actionList"]
