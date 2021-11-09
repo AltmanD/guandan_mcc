@@ -27,12 +27,12 @@ config.gpu_options.visible_device_list = str(hvd.local_rank())
 set_session(tf.Session(config=config))
 
 parser = ArgumentParser()
-parser.add_argument('--alg', type=str, default='ppo', help='The RL algorithm')
-parser.add_argument('--env', type=str, default='PongNoFrameskip-v4', help='The game environment')
+parser.add_argument('--alg', type=str, default='MC', help='The RL algorithm')
+parser.add_argument('--env', type=str, default='GuanDan', help='The game environment')
 parser.add_argument('--num_steps', type=int, default=10000000, help='The number of total training steps')
 parser.add_argument('--data_port', type=int, default=5000, help='Learner server port to receive training data')
 parser.add_argument('--param_port', type=int, default=5001, help='Learner server to publish model parameters')
-parser.add_argument('--model', type=str, default='accnn', help='Training model')
+parser.add_argument('--model', type=str, default='guandan_model', help='Training model')
 parser.add_argument('--pool_size', type=int, default=1280, help='The max length of data pool')
 parser.add_argument('--training_freq', type=int, default=1,
                     help='How many receptions of new data are between each training, '

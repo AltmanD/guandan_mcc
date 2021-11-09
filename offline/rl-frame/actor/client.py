@@ -10,7 +10,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 parser = ArgumentParser()
 parser.add_argument('--round', type=int, default=100,
                     help='The number of total play')
-parser.add_argument('--model', type=str, default='custom_acmlp', 
+parser.add_argument('--model', type=str, default='guandan_model', 
                     help='Training model')
 parser.add_argument('--ip', type=str, default='127.0.0.1',
                     help='IP address of learner server')
