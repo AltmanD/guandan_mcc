@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from argparse import ArgumentParser
 from collections import Counter
@@ -32,6 +33,8 @@ RANK = {
 
 def card2num(list_cards):      # 将字符串转换成数字
     res = []   
+    if list_cards == None:
+        return res
     for ele in list_cards:
         if ele in CardToNum:
             res.append(CardToNum[ele])
@@ -62,10 +65,10 @@ def _action_seq_list2array(action_seq_list):
     action_seq_array = np.zeros((len(action_seq_list), 54))
     for row, list_cards in enumerate(action_seq_list):
         action_seq_array[row, :] = card2array(list_cards)
-    action_seq_array = action_seq_array.reshape(5, 162)
+    action_seq_array = action_seq_array.reshape(5, 216)
     return action_seq_array
 
-def _process_action_seq(sequence, length=15):
+def _process_action_seq(sequence, length=20):
     sequence = sequence[-length:].copy()
     if len(sequence) < length:
         empty_sequence = [[] for _ in range(length - len(sequence))]
@@ -79,6 +82,8 @@ class Player():
         # Set 'allow_growth'
         import tensorflow.compat.v1 as tf
         from tensorflow.keras.backend import set_session
+        os.environ["TF_CPP_MIN_LOG_LEVEL"] = '3'
+        tf.logging.set_verbosity(tf.logging.ERROR)
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         set_session(tf.Session(config=config))
@@ -125,17 +130,16 @@ class Player():
             self.model.set_weights(new_weights)
 
         # forward 并存数据
-        output= self.model.forward(state['z_batch'], state['x_batch'])
+        output= self.model.forward(state['x_batch'], state['z_batch'])
         if self.epsilon > 0 and np.random.rand() < self.epsilon:
-            action_idx = np.random.randint(0, state['legal_actions'].shape[0]+1)
+            action_idx = np.random.randint(0, len(state['legal_actions']))
         else:
             action_idx = np.argmax(output)
         self.step += 1
+        action = state['legal_actions'][action_idx]
         self.mb_states_no_action.append(state['x_no_action'])
         self.mb_z.append(state['z'])
-
-        # TODO: 需要确认此处记录的是下标还是什么？
-        self.mb_actions.append(action_idx)
+        self.mb_actions.append(action)
         self.size += 1
         return action_idx
         
@@ -181,7 +185,7 @@ class MyClient(WebSocketClient):
         self.args = args
         self.history_action = {0: [], 1: [], 2: [], 3:[]}
         self.action_seq = []
-        self.other_left_hands = [2 for _ in range(53)]
+        self.other_left_hands = [2 for _ in range(54)]
         self.flag = 0
 
     def opened(self):
@@ -193,11 +197,18 @@ class MyClient(WebSocketClient):
     def received_message(self, message):
         # 先序列化收到的消息，转为Python中的字典
         message = json.loads(str(message))
+
         # 调用状态对象来解析状态
         self.state.parse(message)
+
+        # 手牌初始化
         if message['stage'] == 'play' and message['type'] == 'notify':
-            self.action_seq.append(card2num(message['curAction'][2]))
-        # if "actionList" in message:
+            if message['curPos'] != self.args.client_index:
+                self.action_seq.append(card2num(message['curAction'][2]))
+        
+        # TODO: 固定规则处理进还贡
+
+        # 需要做动作
         if message['type'] == "act" and message["stage"] == 'play':
             if self.flag == 0:       # 总共牌减去初始手牌
                 init_hand = card2num(message['handCards'])
@@ -206,16 +217,26 @@ class MyClient(WebSocketClient):
                 self.flag = 1
             # 记录history
             for i in range(4):
+                if i == self.args.client_index:
+                    print(self.args.client_index,message['publicInfo'])
                 if i != self.args.client_index:
-                    action = card2num(message['publicInfo'][i]['playArea'][2])
-                    self.history_action[i].append(action)
-                    for ele in action:
-                        self.other_left_hands[ele] -= 1
+                    if not message['publicInfo'][i]['playArea']:
+                        if len(self.action_seq) >= 4 and len(self.action_seq[-1]) == 0 and len(self.action_seq[-2]) == 0:
+                            self.history_action[i].append([])
+                    else:
+                        action = card2num(message['publicInfo'][i]['playArea'][2])
+                        self.history_action[i].append(action)
+                        for ele in action:
+                            self.other_left_hands[ele] -= 1
             # 做动作
+            print(self.args.client_index, self.history_action)
             state = self.prepare(message)
             act_index = self.player.play(state)
-            self.action_seq.append(card2num[message['actionList'][act_index][2]])
-            self.send(json.dumps({"actIndex": act_index}))
+            self.action_seq.append(card2num(message['actionList'][act_index][2]))
+            print(self.args.client_index, self.action_seq)
+            self.send(json.dumps({"actIndex": int(act_index)}))
+
+        # 小局结束，传输数据到learner端
         if message['stage'] == 'episodeOver':
             reward = self.get_reward(message)
             self.player.send_data(reward)
@@ -237,7 +258,6 @@ class MyClient(WebSocketClient):
         return rewards[res]
 
     def prepare(self, message):
-        # TODO:将message和history合成state
         num_legal_actions = message['indexRange'] + 1
         legal_actions = [card2num(i[2]) for i in message['actionList']]
         my_handcards = card2array(card2num(message['handCards']))   # 自己的手牌,54维
@@ -283,13 +303,22 @@ class MyClient(WebSocketClient):
         up_num_cards_left = _get_one_hot_array(message['publicInfo'][(self.args.client_index + 3) % 4]['rest'], 27)   # 上家剩余的牌数
         up_num_cards_left_batch = np.repeat(up_num_cards_left[np.newaxis, :], num_legal_actions, axis=0)
 
-        down_played_cards = card2array(reduce(lambda x, y: x+y, self.history_action[(self.args.client_index + 1) % 4]))    # 下家打过的牌， 54维
+        if len(self.history_action[(self.args.client_index + 1) % 4]) > 0:
+            down_played_cards = card2array(reduce(lambda x, y: x+y, self.history_action[(self.args.client_index + 1) % 4]))    # 下家打过的牌， 54维
+        else:
+            down_played_cards = card2array([])
         down_played_cards_batch = np.repeat(down_played_cards[np.newaxis, :], num_legal_actions, axis=0)
 
-        teammate_played_cards = card2array(reduce(lambda x, y: x+y, self.history_action[(self.args.client_index + 2) % 4]))    # 对家打过的牌
+        if len(self.history_action[(self.args.client_index + 2) % 4]) > 0:
+            teammate_played_cards = card2array(reduce(lambda x, y: x+y, self.history_action[(self.args.client_index + 2) % 4]))    # 对家打过的牌
+        else:
+            teammate_played_cards = card2array([])
         teammate_played_cards_batch = np.repeat(teammate_played_cards[np.newaxis, :], num_legal_actions, axis=0)
 
-        up_played_cards = card2array(reduce(lambda x, y: x+y, self.history_action[(self.args.client_index + 3) % 4]))    # 上家打过的牌
+        if len(self.history_action[(self.args.client_index + 3) % 4]) > 0:
+            up_played_cards = card2array(reduce(lambda x, y: x+y, self.history_action[(self.args.client_index + 3) % 4]))    # 上家打过的牌
+        else:
+            up_played_cards = card2array([])
         up_played_cards_batch = np.repeat(up_played_cards[np.newaxis, :], num_legal_actions, axis=0)
  
         self_rank = _get_one_hot_array(RANK[message['selfRank']], 13)         # 己方当前的级牌，13维
@@ -319,15 +348,15 @@ class MyClient(WebSocketClient):
                             other_handcards,
                             last_action,
                             last_teammate_action,
-                            down_played_cards_batch,
-                            teammate_played_cards_batch,
-                            up_played_cards_batch,
-                            down_num_cards_left_batch,
-                            teammate_num_cards_left_batch,
-                            up_num_cards_left_batch,
-                            self_rank_batch,
-                            oppo_rank_batch,
-                            cur_rank_batch))
+                            down_played_cards,
+                            teammate_played_cards,
+                            up_played_cards,
+                            down_num_cards_left,
+                            teammate_num_cards_left,
+                            up_num_cards_left,
+                            self_rank,
+                            oppo_rank,
+                            cur_rank))
         z = _action_seq_list2array(_process_action_seq(self.action_seq))
         z_batch = np.repeat(z[np.newaxis, :, :], num_legal_actions, axis=0)
 
