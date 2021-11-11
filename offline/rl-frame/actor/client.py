@@ -15,6 +15,10 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 parser = ArgumentParser()
 parser.add_argument('--round', type=int, default=100,
                     help='The number of total play')
+parser.add_argument('--alg', type=str, default='MC', 
+                    help='Training model')
+parser.add_argument('--env', type=str, default='guandan', 
+                    help='Training model')
 parser.add_argument('--model', type=str, default='guandan_model', 
                     help='Training model')
 parser.add_argument('--ip', type=str, default='127.0.0.1',
@@ -27,9 +31,9 @@ parser.add_argument('--exp_path', type=str, default=None,
                     help='Directory to save logging data, model parameters and config file')
 parser.add_argument('--num_saved_ckpt', type=int, default=10,
                     help='Number of recent checkpoint files to be saved')
-parser.add_argument('--observation_space', type=int, default=( 552,),
+parser.add_argument('--observation_space', type=int, default=(552,),
                     help='The YAML configuration file')
-parser.add_argument('--action_space', type=int, default=( 5, 216),
+parser.add_argument('--action_space', type=int, default=(5, 216),
                     help='The YAML configuration file')
 parser.add_argument('--epsilon', type=float, default=0.01,
                     help='Epsilon')

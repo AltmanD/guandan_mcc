@@ -45,18 +45,16 @@ def create_experiment_dir(args, prefix: str) -> None:
     args.exp_path.mkdir()
 
 
-def run_weights_subscriber(args, actor_status):
+def run_weights_subscriber(args, unknown_args):
     """Subscribe weights from Learner and save them locally"""
     context = zmq.Context()
     socket = context.socket(zmq.SUB)
     socket.connect(f'tcp://{args.ip}:{args.param_port}')
     socket.setsockopt_string(zmq.SUBSCRIBE, '')  # Subscribe everything
-
     for model_id in count(1):  # Starts from 1
         while True:
             try:
                 weights = socket.recv(flags=zmq.NOBLOCK)
-
                 # Weights received
                 with open(args.ckpt_path / f'{model_id}.{args.alg}.{args.env}.ckpt', 'wb') as f:
                     f.write(weights)
@@ -67,10 +65,6 @@ def run_weights_subscriber(args, actor_status):
                 break
             except zmq.Again:
                 pass
-
-            if all(actor_status):
-                # All actors finished works
-                return
 
             # For not cpu-intensive
             time.sleep(1)

@@ -50,11 +50,6 @@ class Agent(ABC):
         pass
 
     @abstractmethod
-    def preprocess(self, state: Any, *args, **kwargs) -> Any:
-        """Preprocess the game state"""
-        pass
-
-    @abstractmethod
     def set_weights(self, *args, **kwargs) -> None:
         pass
 
@@ -82,34 +77,6 @@ class Agent(ABC):
         :param kwargs: Optional keyword arguments
         :return: Training statistics
         """
-        pass
-
-    @abstractmethod
-    def prepare_training_data(self, trajectory: List[Tuple[Any, Any, Any, Any, Any, dict]]) -> Dict[str, np.ndarray]:
-        """
-        Prepare the training data from a trajectory
-        :param trajectory: A list of transitions that consists of (state, action, reward, done, next_state, extra_data)
-        :return: Prepared training data
-        """
-        pass
-
-    @abstractmethod
-    def post_process_training_data(self, training_data: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        """
-        Process all training data concatenated from trajectories before sending them to learner(s)
-        :param training_data: Concatenated training data
-        :return: Post-processed data
-        """
-        pass
-
-    @abstractmethod
-    def update_sampling(self, current_step: int, total_steps: int, *args, **kwargs) -> None:
-        """Do some updates according to the process of sampling"""
-        pass
-
-    @abstractmethod
-    def update_training(self, current_step: int, total_steps: int, *args, **kwargs) -> None:
-        """Do some updates according to the process of training"""
         pass
 
     def export_config(self) -> dict:

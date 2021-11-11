@@ -57,6 +57,7 @@ class State(object):
         self._victoryNum = None
         self._draws = None
         self._restCards = None
+        self.tribute_result = None
 
         # TODO: 选手可根据(stage, type)自行定义处理的函数
         self.__parse_func = {
@@ -130,6 +131,7 @@ class State(object):
         请仅在对应的JSON格式下访问对应的实例属性，若此时访问其他属性则很有可能是之前处理时未更新的实例属性，不具有准确性。
         """
         # TODO: 选手可自行做出其他处理
+        self.tribute_result = self._result
         for tribute_result in self._result:
             tribute_pos, receive_tribute_pos, card = tribute_result
             print("{}号位向{}号位进贡{}".format(tribute_pos, receive_tribute_pos, card))

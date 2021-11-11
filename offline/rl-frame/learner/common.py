@@ -2,38 +2,19 @@ import datetime
 import time
 import warnings
 from pathlib import Path
-from typing import Tuple
 
 import yaml
 
 from agents import agent_registry
-from core import Agent, Env
-from envs import _get_gym_env_type, get_env
+from core import Agent
 from models import model_registry
 
 
-def init_components(args, unknown_args) -> Tuple[Env, Agent]:
-    # Initialize environment
-    env = get_env(args.env, args.num_envs, **unknown_args)
-
-    # Get model class
-    if args.model is not None:
-        model_cls = model_registry.get(args.model)
-    else:
-        env_type = _get_gym_env_type(args.env)
-        if env_type == 'atari':
-            model_cls = model_registry.get('qcnn')
-        elif env_type == 'classic_control':
-            model_cls = model_registry.get('qmlp')
-        else:
-            raise NotImplementedError(f'No default model for environment: {args.env!r})')
-
-    # Initialize agent
+def get_agent(args, unknown_args):
+    model_cls = model_registry.get(args.model)
     agent_cls = agent_registry.get(args.alg)
-    # 如果不便learner端构件env，将env.get_observation_space(), env.get_action_space()替换为具体值即可
-    agent = agent_cls(model_cls, env.get_observation_space(), env.get_action_space(), args.agent_config, **unknown_args)
-
-    return env, agent
+    agent = agent_cls(model_cls, args.observation_space, args.action_space, args.agent_config, **unknown_args)
+    return agent
 
 
 def load_yaml_config(args, role_type: str) -> None:

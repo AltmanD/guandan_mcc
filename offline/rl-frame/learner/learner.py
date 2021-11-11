@@ -1,29 +1,30 @@
+import os
+
+os.environ["KMP_WARNINGS"] = "FALSE" 
+
 import multiprocessing
 import pickle
 import subprocess
+import warnings
 from argparse import ArgumentParser
-from enum import Flag
 from multiprocessing import Process
 
-import horovod.tensorflow.keras as hvd
 import tensorflow as tf
 import zmq
 from pyarrow import deserialize
 from tensorflow.keras.backend import set_session
 
-from common import (create_experiment_dir, init_components, load_yaml_config,
+from common import (create_experiment_dir, get_agent, load_yaml_config,
                     save_yaml_config)
 from core.mem_pool import MemPoolManager, MultiprocessingMemPool
 from utils import logger
 from utils.cmdline import parse_cmdline_kwargs
 
-# Horovod: initialize Horovod.
-hvd.init()
-
-# Horovod: pin GPU to be used to process local rank (one GPU per process)
+warnings.filterwarnings("ignore")
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = '3'
+tf.logging.set_verbosity(tf.logging.ERROR)
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
-config.gpu_options.visible_device_list = str(hvd.local_rank())
 set_session(tf.Session(config=config))
 
 parser = ArgumentParser()
@@ -48,7 +49,12 @@ parser.add_argument('--record_throughput_interval', type=int, default=10,
 parser.add_argument('--num_envs', type=int, default=1, help='The number of environment copies')
 parser.add_argument('--ckpt_save_freq', type=int, default=10, help='The number of updates between each weights saving')
 parser.add_argument('--ckpt_save_type', type=str, default='weight', help='Type of checkpoint file will be recorded : weight(smaller) or checkpoint(bigger')
-
+parser.add_argument('--observation_space', type=int, default=(552,),
+                    help='The YAML configuration file')
+parser.add_argument('--action_space', type=int, default=(5, 216),
+                    help='The YAML configuration file')
+parser.add_argument('--epsilon', type=float, default=0.01,
+                    help='Epsilon')
 
 def main():
     # Parse input parameters
@@ -64,7 +70,7 @@ def main():
     weights_socket = context.socket(zmq.PUB)
     weights_socket.bind(f'tcp://*:{args.param_port}')
 
-    _, agent = init_components(args, unknown_args)
+    agent = get_agent(args,unknown_args)
 
     # Configure experiment directory
     create_experiment_dir(args, 'LEARNER-')    
@@ -102,11 +108,9 @@ def main():
             weights_socket.send(pickle.dumps(agent.get_weights()))
 
         if len(mem_pool) >= args.batch_size:
-
             # Sync weights to actor
             weights = agent.get_weights()
-            if hvd.rank() == 0:
-                weights_socket.send(pickle.dumps(weights))
+            weights_socket.send(pickle.dumps(weights))
             
             if freq%args.ckpt_save_freq == 0:
                 if args.ckpt_save_type == 'checkpoint':

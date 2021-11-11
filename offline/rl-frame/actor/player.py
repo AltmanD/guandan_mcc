@@ -6,15 +6,17 @@ from collections import Counter
 from functools import reduce
 from multiprocessing import Process
 from typing import Dict
+from random import randint
+
 
 import numpy as np
 import zmq
 from pyarrow import serialize
 from ws4py.client.threadedclient import WebSocketClient
-
 from models import get_model
 from state import State
 from utils import logger
+from utils.rule import combine_handcards
 from utils.data_trans import (create_experiment_dir, find_new_weights,
                               run_weights_subscriber)
 
@@ -116,8 +118,8 @@ class Player():
         subscriber.start()
 
         # 初始化模型
-        model_init_flag = 1
-        while not model_init_flag:
+        model_init_flag = 0
+        while model_init_flag == 0:
             new_weights, self.model_id = find_new_weights(self.model_id, self.args.ckpt_path)
             if new_weights is not None:
                 self.model.set_weights(new_weights)
@@ -139,7 +141,7 @@ class Player():
         action = state['legal_actions'][action_idx]
         self.mb_states_no_action.append(state['x_no_action'])
         self.mb_z.append(state['z'])
-        self.mb_actions.append(action)
+        self.mb_actions.append([action])
         self.size += 1
         return action_idx
         
@@ -167,14 +169,192 @@ class Player():
         self.mb_actions = []
 
     def prepare_training_data(self, reward) -> Dict[str, np.ndarray]:
-        self.rewards = [reward for _ in range(self.size)]
-        data = [self.mb_states_no_action, self.mb_z, self.mb_actions, self.rewards]
+        self.rewards = [[reward] for _ in range(self.size)]
+        mb_states_no_action = np.asarray(self.mb_states_no_action)
+        mb_z = np.asarray(self.mb_z)
+        mb_actions = np.asarray(self.mb_actions)
+        rewards = np.asarray(self.rewards)
+        data = [mb_states_no_action, mb_z, mb_actions, rewards]
         name = ['x_no_action', 'z', 'action', 'reward']
         return dict(zip(name, data))
     
     def play(self, state) -> int:
         action_idx = self.sample(state)
         return action_idx
+
+    # 进还贡
+    def back_action(self, msg, mypos, tribute_result):
+        rank = msg["curRank"]
+        self.action = msg["actionList"]
+        handCards = msg["handCards"]
+        card_val = {"2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "T": 10, "J": 11,
+                    "Q": 12, "K": 13, "A": 14, "B": 16, "R": 17}
+        card_val[rank] = 15
+        def flag_TJQ(handCards_X) -> tuple:
+            flag_T = False
+            flag_J = False
+            flag_Q = False
+            for i in range(len(handCards_X)):
+                if handCards_X[i][0][-1] == "T":
+                    flag_T = True
+                if handCards_X[i][0][-1] == "J":
+                    flag_J = True
+                if handCards_X[i][0][-1] == "Q":
+                    flag_Q = True
+            return flag_T, flag_J, flag_Q
+
+        def get_card_index(target: str) -> int:
+            for i in range(len(self.action)):
+                if self.action[i][2][0] == target:
+                    return i
+
+        def choose_in_single(single_list) -> str:
+            for my_pos in tribute_result:
+                if my_pos[1] == mypos:
+                    tribute_pos = my_pos[0]
+
+            n = len(single_list)
+            if (int(tribute_pos) + int(mypos)) % 2 != 0:  
+                for card in single_list:
+                    if card in ['H5', 'HT']:  
+                        return card
+                    elif card in ['S5', 'C5', 'D5', 'ST', 'CT', 'DT']:
+                        return card  
+                
+                return single_list[randint(0, n - 1)]
+            else:  
+                back_list = []
+                for card in single_list:
+                    if card[-1] != 'T':
+                        if int(card[-1]) < 5:
+                            back_list.append(card)  
+                if back_list:
+                    return back_list[randint(0, len(back_list) - 1)]
+                return single_list[randint(0, n - 1)]
+
+        def choose_in_pair(pair_list, pair_list_from_handcards) -> str:
+            val_dict = {"2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "T": 10}
+            if len(pair_list) < 3:
+                return pair_list[0][0]
+            for i in range(len(pair_list)):
+                flag = False
+                if i >= 2:
+                    pair_first_val, pair_second_val, pair_third_val = pair_list[i - 2][0][-1], pair_list[i - 1][0][-1], \
+                                                                      pair_list[i][0][-1]
+                    if val_dict[pair_first_val] == val_dict[pair_second_val] - 1 and val_dict[pair_second_val] == \
+                            val_dict[pair_third_val] - 1:
+                        flag = True
+                if 1 <= i <= len(pair_list) - 2:
+                    pair_first_val, pair_second_val, pair_third_val = pair_list[i - 1][0][-1], pair_list[i][0][-1], \
+                                                                      pair_list[i + 1][0][-1]
+                    if val_dict[pair_first_val] == val_dict[pair_second_val] - 1 and val_dict[pair_second_val] == \
+                            val_dict[pair_third_val] - 1:
+                        flag = True
+                if i <= len(pair_list) - 3:
+                    pair_first_val, pair_second_val, pair_third_val = pair_list[i][0][-1], pair_list[i + 1][0][-1], \
+                                                                      pair_list[i + 2][0][-1]
+                    if val_dict[pair_first_val] == val_dict[pair_second_val] - 1 and val_dict[pair_second_val] == \
+                            val_dict[pair_third_val] - 1:
+                        flag = True
+                if pair_list[i][0][-1] == '9':
+                    flag_T, flag_J, flag_Q = flag_TJQ(pair_list_from_handcards)
+                    if flag_T and flag_J:
+                        flag = True
+                if pair_list[i][0][-1] == 'T':
+                    flag_T, flag_J, flag_Q = flag_TJQ(pair_list_from_handcards)
+                    if flag_J and flag_Q:
+                        flag = True
+                if flag:
+                    continue
+                else:
+                    return pair_list[i][0]
+            return pair_list[0][0]
+
+        def choose_in_trips(trips_list, trips_list_from_handcards) -> str:
+            val_dict = {"2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "T": 10}
+            if len(trips_list) < 2:
+                return trips_list[0][0]
+            for i in range(len(trips_list)):
+                flag = False
+                if i >= 1:
+                    pair_first_val, pair_second_val = trips_list[i - 1][0][-1], trips_list[i][0][-1]
+                    if val_dict[pair_first_val] == val_dict[pair_second_val] - 1:
+                        flag = True
+                if i <= len(trips_list) - 2:
+                    pair_first_val, pair_second_val = trips_list[i][0][-1], trips_list[i + 1][0][-1]
+                    if val_dict[pair_first_val] == val_dict[pair_second_val] - 1:
+                        flag = True
+                if trips_list[i][0][-1] == 'T':
+                    flag_T, flag_J, flag_Q = flag_TJQ(trips_list_from_handcards)
+                    if flag_J:
+                        flag = True
+                if flag:
+                    continue
+                else:
+                    return trips_list[i][0]
+            return trips_list[0][0]
+
+        def choose_in_bomb(bomb_list, bomb_info) -> str:
+            def get_card_from_bomb(bomb_list, key):
+                for bomb in bomb_list:
+                    for card in bomb:
+                        if card[-1] == key:
+                            return card
+
+            for key, value in bomb_info:
+                if value > 4:
+                    return get_card_from_bomb(bomb_list, key)
+            return bomb_list[0][0]
+
+        combined_handcards, handCards_bomb_info = combine_handcards(handCards, rank, card_val)  
+
+        combined_temp = {"Single": [], "Trips": [], "Pair": [], "Bomb": []}
+        temp_bomb_info = {}
+        for card in combined_handcards["Single"]:
+            if card_val[card[-1]] <= 10:
+                combined_temp["Single"].append(card)
+        for trips_card in combined_handcards["Trips"]:
+            if card_val[trips_card[0][-1]] <= 10:
+                combined_temp["Trips"].append(trips_card)
+        for pair_card in combined_handcards["Pair"]:
+            if card_val[pair_card[0][-1]] <= 10:
+                combined_temp["Pair"].append(pair_card)
+        for bomb_card in combined_handcards["Bomb"]:
+            if card_val[bomb_card[0][-1]] <= 10:
+                combined_temp["Bomb"].append(bomb_card)
+        for key, values in handCards_bomb_info.items():
+            if card_val[key] <= 10:
+                temp_bomb_info[key] = values
+
+        card = None
+        if combined_temp["Single"]:
+            
+            card = choose_in_single(combined_temp["Single"])
+        elif combined_temp["Trips"]:
+            
+            card = choose_in_trips(combined_temp["Trips"], combined_handcards["Trips"])
+        elif combined_temp["Pair"]:
+            
+            card = choose_in_pair(combined_temp["Pair"], combined_handcards["Pair"])
+        elif combined_temp["Bomb"]:
+            
+            card = choose_in_bomb(combined_temp["Bomb"], temp_bomb_info)
+        else:
+            
+            temp = []  
+            for handCard in handCards:
+                if card_val[handCard[-1]] <= 10:
+                    temp.append(handCard)
+            card = temp[randint(0, len(temp) - 1)]
+        return get_card_index(card)
+
+    def tribute(self,actionList,rank):
+        rank_card = 'H'+rank
+        first_action = actionList[0]
+        if rank_card in first_action[2]:
+            return 1
+        else:
+            return 0
 
 
 class MyClient(WebSocketClient):
@@ -200,49 +380,60 @@ class MyClient(WebSocketClient):
 
         # 调用状态对象来解析状态
         self.state.parse(message)
-
+        
         # 手牌初始化
         if message['stage'] == 'play' and message['type'] == 'notify':
             if message['curPos'] != self.args.client_index:
                 self.action_seq.append(card2num(message['curAction'][2]))
-        
-        # TODO: 固定规则处理进还贡
 
         # 需要做动作
-        if message['type'] == "act" and message["stage"] == 'play':
-            if self.flag == 0:       # 总共牌减去初始手牌
-                init_hand = card2num(message['handCards'])
-                for ele in init_hand:
-                    self.other_left_hands[ele] -= 1
-                self.flag = 1
-            # 记录history
-            for i in range(4):
-                if i == self.args.client_index:
-                    print(self.args.client_index,message['publicInfo'])
-                if i != self.args.client_index:
-                    if not message['publicInfo'][i]['playArea']:
-                        if len(self.action_seq) >= 4 and len(self.action_seq[-1]) == 0 and len(self.action_seq[-2]) == 0:
-                            self.history_action[i].append([])
-                    else:
-                        action = card2num(message['publicInfo'][i]['playArea'][2])
-                        self.history_action[i].append(action)
-                        for ele in action:
-                            self.other_left_hands[ele] -= 1
-            # 做动作
-            print(self.args.client_index, self.history_action)
-            state = self.prepare(message)
-            act_index = self.player.play(state)
-            self.action_seq.append(card2num(message['actionList'][act_index][2]))
-            print(self.args.client_index, self.action_seq)
-            self.send(json.dumps({"actIndex": int(act_index)}))
+        if message["type"] == 'act':
+            # 进还贡
+            if message["stage"] == "back":
+                act_index = self.player.back_action(message, self.state._myPos, self.state.tribute_result)
+                self.send(json.dumps({"actIndex": int(act_index)}))
+                # 调整手牌
+            elif message["stage"] == "tribute":
+                act_index = self.player.tribute(message['actionList'], message["curRank"])
+                self.send(json.dumps({"actIndex": int(act_index)}))
+                # 调整手牌
+            # 打牌
+            elif message["stage"] == 'play':
+                if self.flag == 0:       # 总共牌减去初始手牌
+                    init_hand = card2num(message['handCards'])
+                    for ele in init_hand:
+                        self.other_left_hands[ele] -= 1
+                    self.flag = 1
+                # 记录history
+                for i in range(4):
+                    if i == self.args.client_index:
+                        print(self.args.client_index,message['publicInfo'])
+                    if i != self.args.client_index:
+                        if not message['publicInfo'][i]['playArea']:
+                            if len(self.action_seq) >= 4 and len(self.action_seq[-1]) == 0 and len(self.action_seq[-2]) == 0:
+                                self.history_action[i].append([])
+                        else:
+                            action = card2num(message['publicInfo'][i]['playArea'][2])
+                            self.history_action[i].append(action)
+                            for ele in action:
+                                self.other_left_hands[ele] -= 1
+                # 做动作
+                print(self.args.client_index, self.history_action)
+                state = self.prepare(message)
+                act_index = self.player.play(state)
+                self.action_seq.append(card2num(message['actionList'][act_index][2]))
+                print(self.args.client_index, self.action_seq)
+                self.send(json.dumps({"actIndex": int(act_index)}))
 
         # 小局结束，传输数据到learner端
         if message['stage'] == 'episodeOver':
             reward = self.get_reward(message)
+            print('episode over!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
             self.player.send_data(reward)
+
             self.history_action = {0: [], 1: [], 2: [], 3:[]}
             self.action_seq = []
-            self.other_left_hands = [2 for _ in range(53)]
+            self.other_left_hands = [2 for _ in range(54)]
             self.flag = 0
 
     def get_reward(self, message):
