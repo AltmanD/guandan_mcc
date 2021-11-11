@@ -106,6 +106,7 @@ def main():
     while True:
         if learn_flag == 0:
             weights_socket.send(pickle.dumps(agent.get_weights()))
+            learn_flag = 1
 
         if len(mem_pool) >= args.batch_size:
             # Sync weights to actor
@@ -130,10 +131,10 @@ def main():
                 # Training
                 stat = agent.learn(data)
                 learn_flag = 1
-                if stat is not None:
-                    for k, v in stat.items():
-                        logger.record_tabular(k, v)
-                logger.dump_tabular()
+                # if stat is not None:
+                #     for k, v in stat.items():
+                #         logger.record_tabular(k, v)
+                # logger.dump_tabular()
 
             freq += 1
 

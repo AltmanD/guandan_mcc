@@ -1,5 +1,6 @@
 .idea/
 Client*
+LEARNER*
 
 ### Copied from https://raw.githubusercontent.com/github/gitignore/master/Python.gitignore
 # Byte-compiled / optimized / DLL files

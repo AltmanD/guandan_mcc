@@ -418,19 +418,15 @@ class MyClient(WebSocketClient):
                             for ele in action:
                                 self.other_left_hands[ele] -= 1
                 # 做动作
-                print(self.args.client_index, self.history_action)
                 state = self.prepare(message)
                 act_index = self.player.play(state)
                 self.action_seq.append(card2num(message['actionList'][act_index][2]))
-                print(self.args.client_index, self.action_seq)
                 self.send(json.dumps({"actIndex": int(act_index)}))
 
         # 小局结束，传输数据到learner端
         if message['stage'] == 'episodeOver':
             reward = self.get_reward(message)
-            print('episode over!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
             self.player.send_data(reward)
-
             self.history_action = {0: [], 1: [], 2: [], 3:[]}
             self.action_seq = []
             self.other_left_hands = [2 for _ in range(54)]
