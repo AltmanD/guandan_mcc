@@ -8,7 +8,6 @@ from multiprocessing import Process
 from typing import Dict
 from random import randint
 
-
 import numpy as np
 import zmq
 from pyarrow import serialize
@@ -82,7 +81,7 @@ def _process_action_seq(sequence, length=20):
 class Player():
     def __init__(self, args, unknown_args) -> None:
         # Set 'allow_growth'
-        import tensorflow.compat.v1 as tf
+        import tensorflow as tf
         from tensorflow.keras.backend import set_session
         os.environ["TF_CPP_MIN_LOG_LEVEL"] = '3'
         tf.logging.set_verbosity(tf.logging.ERROR)
@@ -100,10 +99,12 @@ class Player():
         self.data_port = args.data_port
         self.size = 0
         self.epsilon = args.epsilon
+        self.num_set_weight = 0
 
         # 模型初始化
         self.model = get_model(args)
         self.model_id = -1
+        self.weights_name = tf.trainable_variables(scope=self.model.scope)
 
         # log文件
         create_experiment_dir(self.args, f'Client{args.client_index}-')
@@ -122,14 +123,16 @@ class Player():
         while model_init_flag == 0:
             new_weights, self.model_id = find_new_weights(self.model_id, self.args.ckpt_path)
             if new_weights is not None:
-                self.model.set_weights(new_weights)
+                self.model.set_weights(new_weights, self.weights_name)
+                self.num_set_weight += 1
                 model_init_flag = 1
 
     def sample(self, state) -> int:
         # 更新模型
         new_weights, self.model_id = find_new_weights(self.model_id, self.args.ckpt_path)
         if new_weights is not None:
-            self.model.set_weights(new_weights)
+            self.model.set_weights(new_weights, self.weights_name)
+            self.num_set_weight += 1
 
         # forward 并存数据
         output= self.model.forward(state['x_batch'], state['z_batch'])
@@ -141,7 +144,7 @@ class Player():
         action = state['legal_actions'][action_idx]
         self.mb_states_no_action.append(state['x_no_action'])
         self.mb_z.append(state['z'])
-        self.mb_actions.append([action])
+        self.mb_actions.append(card2array(action))
         self.size += 1
         return action_idx
         
@@ -158,7 +161,7 @@ class Player():
         socket.recv()
 
         # 打印log
-        logger.record_tabular("steps", self.step)
+        logger.record_tabular("step this episode", self.step)
         logger.dump_tabular()
 
         # 重置数据存储
@@ -406,8 +409,6 @@ class MyClient(WebSocketClient):
                     self.flag = 1
                 # 记录history
                 for i in range(4):
-                    if i == self.args.client_index:
-                        print(self.args.client_index,message['publicInfo'])
                     if i != self.args.client_index:
                         if not message['publicInfo'][i]['playArea']:
                             if len(self.action_seq) >= 4 and len(self.action_seq[-1]) == 0 and len(self.action_seq[-2]) == 0:
@@ -565,4 +566,3 @@ if __name__ == '__main__':
     list = {'type': 'act', 'stage': 'play', 'handCards': ['S2', 'D2', 'C3', 'S4', 'C4', 'D4', 'S5', 'H5', 'C6', 'D6', 'C7', 'D7', 'H8', 'D8', 'H9', 'C9', 'C9', 'DT', 'CJ', 'DJ', 'HQ', 'CQ', 'SK', 'CA', 'DA', 'DA', 'SB'], 'publicInfo': [{'rest': 0, 'playArea': ['Single', 'T', ['ST']]}, {'rest': 0, 'playArea': ['Single', '4', ['H4']]}, {'rest': 1, 'playArea': ['Single', 'Q', ['SQ']]}, {'rest': 27, 'playArea': [None, None, None]}], 'selfRank': '4', 'oppoRank': 'A', 'curRank': 'A', 'curPos': 2, 'curAction': ['Single', 'Q', ['SQ']], 'greaterPos': 2, 'greaterAction': ['Single', 'Q', ['SQ']], 'actionList': [['PASS', 'PASS', 'PASS'], ['Single', 'K', ['SK']], ['Single', 'A', ['CA']], ['Single', 'A', ['DA']], ['Single', 'B', ['SB']]], 'indexRange': 4}
     agent = MyClient(f'ws://127.0.0.1:9618/game/gd/client3', args, unknown_args)
     obs = agent.prepare(list)
-    print(obs)

@@ -29,7 +29,7 @@ parser.add_argument('--param_port', type=int, default=5001,
                     help='Learner server port to subscribe model parameters')
 parser.add_argument('--exp_path', type=str, default=None,
                     help='Directory to save logging data, model parameters and config file')
-parser.add_argument('--num_saved_ckpt', type=int, default=10,
+parser.add_argument('--num_saved_ckpt', type=int, default=50,
                     help='Number of recent checkpoint files to be saved')
 parser.add_argument('--observation_space', type=int, default=(552,),
                     help='The YAML configuration file')
@@ -42,7 +42,6 @@ parser.add_argument('--epsilon', type=float, default=0.01,
 def run_one_client(index, args, unknown_args,):
     args.client_index = index
     client = MyClient(f'ws://127.0.0.1:9618/game/gd/client{index}', args, unknown_args)
-    print(f'client{client}')
     client.connect()
     client.run_forever()
 

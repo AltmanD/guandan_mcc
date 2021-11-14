@@ -16,8 +16,8 @@ class MCAgent(Agent):
         self.lr = lr
 
         self.policy_model = None
-        self.train = False
         self.loss = None
+        self.train_q = None
 
         self.target_ph = utils.placeholder(shape=(1))
 
@@ -30,14 +30,13 @@ class MCAgent(Agent):
         self.policy_model.sess.run(tf.global_variables_initializer())
 
     def learn(self, training_data: Dict[str, np.ndarray], *args, **kwargs) -> None:
-        if self.train:
-            x_no_action, z, action, reward = [training_data[key] for key in ['x_no_action', 'z', 'action', 'reward']]
-            x_batch = tf.concat((x_no_action, action), dim=2)
+        x_no_action, z, action, reward = [training_data[key] for key in ['x_no_action', 'z', 'action', 'reward']]
+        x_batch = np.concatenate([x_no_action, action], axis=-1)
 
-            self.policy_model.sess.run(self.train_q, feed_dict={
-                self.policy_model.x_ph: x_batch,
-                self.policy_model.z: z,
-                self.target_ph: reward})
+        self.policy_model.sess.run(self.train_q, feed_dict={
+            self.policy_model.x_ph: x_batch,
+            self.policy_model.z: z,
+            self.target_ph: reward})
 
     def set_weights(self, weights, *args, **kwargs) -> None:
         self.policy_model.set_weights(weights)

@@ -38,14 +38,18 @@ class QModel(TFV1Model, ABC):
 class GDModel(QModel):
     def build(self) -> None:
         with tf.variable_scope(self.scope):
-            x = tf.unstack(self.z, 5, 1)
-            lstm_cell = tf.contrib.rnn.BasicLSTMCell(128, forget_bias=1.0)
-            outputs, _ = tf.contrib.rnn.static_rnn(lstm_cell, x, dtype=tf.float32)
-            lstm_out = outputs[-1]
-            x = tf.concat([lstm_out, self.x_ph], axis=-1)
-            self.values = utils.mlp(x, [512, 512, 512, 512, 512, 1], activation='relu',
-                                        output_activation=None)
-                        
+            with tf.variable_scope('l1'):
+                x = tf.unstack(self.z, 5, 1)
+            with tf.variable_scope('l2'):
+                lstm_cell = tf.contrib.rnn.BasicLSTMCell(128, forget_bias=1.0)
+            with tf.variable_scope('l3'):
+                outputs, _ = tf.contrib.rnn.static_rnn(lstm_cell, x, dtype=tf.float32)
+                lstm_out = outputs[-1]
+                x = tf.concat([lstm_out, self.x_ph], axis=-1)
+            with tf.variable_scope('v'):
+                self.values = utils.mlp(x, [512, 512, 512, 512, 512, 1], activation='relu',
+                                            output_activation=None)
+          
 
 @model_registry.register('qmlp')
 class QMLPModel(QModel):

@@ -7,7 +7,7 @@ import models.utils as utils
 from models import model_registry
 from models.tf_v1_model import TFV1Model
 
-__all__ = ['QModel', 'QMLPModel', 'QCNNModel']
+__all__ = ['QModel', 'QMLPModel', 'QCNNModel', 'GDModel']
 
 
 class QModel(TFV1Model, ABC):
@@ -24,7 +24,7 @@ class QModel(TFV1Model, ABC):
                                      *args, **kwargs)
 
         # 参数初始化
-        self.sess.run( tf.global_variables_initializer() )    
+        self.sess.run(tf.global_variables_initializer())    
 
     def forward(self, x_batch: Any, z: Any, *args, **kwargs) -> Any:
         return self.sess.run(self.values, feed_dict={self.x_ph: x_batch, self.z: z})
@@ -38,14 +38,17 @@ class QModel(TFV1Model, ABC):
 class GDModel(QModel):
     def build(self) -> None:
         with tf.variable_scope(self.scope):
-            x = tf.unstack(self.z, 5, 1)
-            lstm_cell = tf.contrib.rnn.BasicLSTMCell(128, forget_bias=1.0)
-            outputs, _ = tf.contrib.rnn.static_rnn(lstm_cell, x, dtype=tf.float32)
-            lstm_out = outputs[-1]
-            x = tf.concat([lstm_out, self.x_ph], axis=-1)
-            self.values = utils.mlp(x, [512, 512, 512, 512, 512, 1], activation='relu',
-                                        output_activation=None)
-
+            with tf.variable_scope('l'):
+                x = tf.unstack(self.z, 5, 1)
+                lstm_cell = tf.contrib.rnn.BasicLSTMCell(128, forget_bias=1.0)
+                outputs, _ = tf.contrib.rnn.static_rnn(lstm_cell, x, dtype=tf.float32)
+                lstm_out = outputs[-1]
+                x = tf.concat([lstm_out, self.x_ph], axis=-1)
+            with tf.variable_scope('v'):
+                self.values = utils.mlp(x, [512, 512, 512, 512, 512, 1], activation='relu',
+                                            output_activation=None)
+        print('model build success')
+          
 
 @model_registry.register('qmlp')
 class QMLPModel(QModel):

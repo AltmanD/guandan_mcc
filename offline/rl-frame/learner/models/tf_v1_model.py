@@ -29,10 +29,11 @@ class TFV1Model(Model, ABC):
         # Build saver
         self.saver = tf.train.Saver(tf.trainable_variables())
 
-    def set_weights(self, weights, *args, **kwargs) -> None:
+    def set_weights(self, weights, weights_name,  *args, **kwargs) -> None:
         feed_dict = {self._weight_ph[var.name]: weight
-                     for (var, weight) in zip(tf.trainable_variables(scope=self.scope), weights)}
-
+                     for (var, weight) in zip(weights_name, weights)}
+        print('----------------------------')
+        print(feed_dict)
         self.sess.run(self._nodes, feed_dict=feed_dict)
 
     def get_weights(self, *args, **kwargs) -> Any:
