@@ -116,8 +116,6 @@ class MyClient(WebSocketClient):
                             self.action_order.append(self.over[0])      # 添加第一个出完牌的玩家的信息
                             self.history_action[self.over[0]].append([-1])
                             self.action_seq.append([-1])
-                            # self.history_action[self.over[0]].append([])
-                            # self.action_seq.append([])
                         else:
                             self.action_order.append(just_play)        # 不是头游的上家接的
                             self.action_seq.append(action)
@@ -128,8 +126,6 @@ class MyClient(WebSocketClient):
                         self.action_seq.append(action)
                         self.history_action[message['curPos']].append(action)
                         self.action_order.append(self.over[0])      # 添加第一个出完牌的玩家的信息
-                        # self.history_action[self.over[0]].append([])
-                        # self.action_seq.append([])
                         self.history_action[self.over[0]].append([-1])
                         self.action_seq.append([-1])
                         self.action_order.append((just_play + 2) % 4)      # 添加被跳过出牌的玩家的信息
@@ -140,8 +136,6 @@ class MyClient(WebSocketClient):
                         self.action_seq.append(action)
                         self.history_action[message['curPos']].append(action)
                         self.action_order.append(self.over[0])      # 添加第一个出完牌的玩家的信息
-                        # self.history_action[self.over[0]].append([])
-                        # self.action_seq.append([])
                         self.history_action[self.over[0]].append([-1])
                         self.action_seq.append([-1])
                     else:
@@ -161,13 +155,9 @@ class MyClient(WebSocketClient):
                             self.action_seq.append(action)
                             self.history_action[message['curPos']].append(action)
                             self.action_order.append((just_play + 1) % 4)     # 先出完的肯定是紧挨着的上下家
-                            # self.history_action[(just_play + 1) % 4].append([])
-                            # self.action_seq.append([])
                             self.history_action[(just_play + 1) % 4].append([-1])
                             self.action_seq.append([-1])
                             self.action_order.append((just_play + 2) % 4)     
-                            # self.history_action[(just_play + 2) % 4].append([])
-                            # self.action_seq.append([])     
                             self.history_action[(just_play + 2) % 4].append([-1])
                             self.action_seq.append([-1])     
                     elif self.flag <= 2 and (just_play+1) % 4 in self.over:     # 接风时全都跳过的情况
@@ -176,11 +166,6 @@ class MyClient(WebSocketClient):
                         self.action_seq.append(action)
                         self.history_action[message['curPos']].append(action)     
                         self.action_order.append((just_play + 1) % 4)     # 先出完的肯定是紧挨着的上下家
-                        # self.history_action[(just_play + 1) % 4].append([])
-                        # self.action_seq.append([])
-                        # self.action_order.append((just_play + 2) % 4)     
-                        # self.history_action[(just_play + 2) % 4].append([])
-                        # self.action_seq.append([])  
                         self.history_action[(just_play + 1) % 4].append([-1])
                         self.action_seq.append([-1])
                         self.action_order.append((just_play + 2) % 4)     
@@ -195,11 +180,6 @@ class MyClient(WebSocketClient):
                         self.action_seq.append(action)
                         self.history_action[message['curPos']].append(action)
                         self.action_order.append((just_play + 1) % 4)     # 先出完的肯定是紧挨着的上下家
-                        # self.history_action[(just_play + 1) % 4].append([])
-                        # self.action_seq.append([])
-                        # self.action_order.append((just_play + 2) % 4)     
-                        # self.history_action[(just_play + 2) % 4].append([])
-                        # self.action_seq.append([])
                         self.history_action[(just_play + 1) % 4].append([-1])
                         self.action_seq.append([-1])
                         self.action_order.append((just_play + 2) % 4)     
@@ -233,17 +213,14 @@ class MyClient(WebSocketClient):
                 # 准备状态数据
                 if len(message['actionList']) == 1:
                     self.send(json.dumps({"actIndex": 0}))
-                # elif len(self.over) > 0:
-                #     self.send(json.dumps({"actIndex": randint(0, message["indexRange"])}))
                 else :
                     state = self.prepare(message)
+                    # state = self.prepare(message)
                     # 传输给决策模块
                     self.socket.send(serialize(state).to_buffer())
                     # 收到决策
                     act_index = deserialize(self.socket.recv())
                     # 作出决策
-                    # doaction = message['actionList'][int(act_index)]
-                    # print(f'Client{self.mypos} do action{act_index}:{doaction}')
                     self.send(json.dumps({"actIndex": int(act_index)}))
 
         # 小局结束
@@ -283,12 +260,80 @@ class MyClient(WebSocketClient):
         else:
             return rewards[res]
 
+    def proc_universal(self, handCards, cur_rank):
+        res = np.zeros(12, dtype=np.int8)
+
+        if handCards[(cur_rank-1)*4] == 0:
+            return res
+
+        res[0] = 1
+        rock_flag = 0
+        for i in range(4):
+            left, right = 0, 5
+            temp = [handCards[i + j*4] if i+j*4 != (cur_rank-1)*4 else 0 for j in range(5)]
+            while right <= 12:
+                zero_num = temp.count(0)
+                if zero_num <= 1:
+                    rock_flag = 1
+                    break
+                else:
+                    temp.append(handCards[i + right*4] if i+right*4 != (cur_rank-1)*4 else 0)
+                    temp.pop(0)
+                    left += 1
+                    right += 1
+            if rock_flag == 1:
+                break
+        res[1] = rock_flag
+
+        num_count = [0] * 13
+        for i in range(4):
+            for j in range(13):
+                if handCards[i + j*4] != 0 and i + j*4 != (cur_rank-1)*4:
+                    num_count[j] += 1
+        num_max = max(num_count)
+        if num_max >= 6:
+            res[2:8] = 1
+        elif num_max == 5:
+            res[3:8] = 1
+        elif num_max == 4:
+            res[4:8] = 1
+        elif num_max == 3:
+            res[5:8] = 1
+        elif num_max == 2:
+            res[6:8] = 1
+        else:
+            res[7] = 1
+        temp = 0
+        for i in range(13):
+            if num_count[i] != 0:
+                temp += 1
+                if i >= 1:
+                    if num_count[i] == 2 and num_count[i-1] >= 3 or num_count[i] >= 3 and num_count[i-1] == 2:
+                        res[9] = 1
+                    elif num_count[i] == 2 and num_count[i-1] == 2:
+                        res[11] = 1
+                if i >= 2:
+                    if num_count[i-2] == 1 and num_count[i-1] >= 2 and num_count[i] >= 2 or \
+                        num_count[i-2] >= 2 and num_count[i-1] == 1 and num_count[i] >= 2 or \
+                        num_count[i-2] >= 2 and num_count[i-1] >= 2 and num_count[i] == 1:
+                        res[10] = 1
+            else:
+                temp = 0
+        if temp >= 4:
+            res[8] = 1
+        return res
+
     def prepare(self, message):
         num_legal_actions = message['indexRange'] + 1
         legal_actions = [card2num(i[2]) for i in message['actionList']]
         my_handcards = card2array(card2num(message['handCards']))   # 自己的手牌,54维
-       
+        # print('my_handcards', my_handcards)
         my_handcards_batch = np.repeat(my_handcards[np.newaxis, :],
+                                   num_legal_actions, axis=0)
+
+        universal_card_flag = self.proc_universal(my_handcards, RANK[message['curRank']])     # 万能牌的标志位, 12维
+        # print('universal_card_flag', universal_card_flag)
+        universal_card_flag_batch = np.repeat(universal_card_flag[np.newaxis, :],
                                    num_legal_actions, axis=0)
 
         other_hands = []       # 其余所有玩家手上剩余的牌，54维
@@ -298,8 +343,9 @@ class MyClient(WebSocketClient):
             elif self.other_left_hands[i] == 2:
                 other_hands.append(i)
                 other_hands.append(i)
-        #print(self.mypos, "other handcards: ", other_hands)
+        # print(self.mypos, "other handcards: ", other_hands)
         other_handcards = card2array(other_hands)      
+        # print('other_handcards', other_handcards)
         other_handcards_batch = np.repeat(other_handcards[np.newaxis, :],
                                       num_legal_actions, axis=0)
 
@@ -307,19 +353,17 @@ class MyClient(WebSocketClient):
         if len(self.action_seq) > 0:
             last_action = card2array(self.action_seq[-1])
         else:
-            last_action = card2array([])
+            last_action = card2array([-1])
+        # print(last_action)
         last_action_batch = np.repeat(last_action[np.newaxis, :],
                                   num_legal_actions, axis=0)
         
         last_teammate_action = []               # 队友最后的动作， 54维
-        if len(self.history_action[(self.mypos + 2) % 4]) > 0:
-            if (self.mypos + 2) % 4 not in self.over:
-                last_teammate_action = card2array(self.history_action[(self.mypos + 2) % 4][-1])
-            else:
-                last_teammate_action = card2array([-1])
+        if len(self.history_action[(self.mypos + 2) % 4]) > 0 and (self.mypos + 2) % 4 not in self.over:
             last_teammate_action = card2array(self.history_action[(self.mypos + 2) % 4][-1])
         else:
-            last_teammate_action = card2array([])
+            last_teammate_action = card2array([-1])
+        # print(last_teammate_action)
         last_teammate_action_batch = np.repeat(last_teammate_action[np.newaxis, :], num_legal_actions, axis=0)
 
         my_action_batch = np.zeros(my_handcards_batch.shape)     # 合法动作，54维
@@ -327,42 +371,58 @@ class MyClient(WebSocketClient):
             my_action_batch[j, :] = card2array(action)
 
         down_num_cards_left = _get_one_hot_array(self.remaining[(self.mypos + 1) % 4], 27, 1)   # 下家剩余的牌数， 28维
+        
+        # print(down_num_cards_left)
         down_num_cards_left_batch = np.repeat(down_num_cards_left[np.newaxis, :], num_legal_actions, axis=0)
 
         teammate_num_cards_left = _get_one_hot_array(self.remaining[(self.mypos + 2) % 4], 27, 1)   # 对家剩余的牌数
+        
+        # print(teammate_num_cards_left)
         teammate_num_cards_left_batch = np.repeat(teammate_num_cards_left[np.newaxis, :], num_legal_actions, axis=0)
 
         up_num_cards_left = _get_one_hot_array(self.remaining[(self.mypos + 3) % 4], 27, 1)   # 上家剩余的牌数
+        
+        # print(up_num_cards_left)
         up_num_cards_left_batch = np.repeat(up_num_cards_left[np.newaxis, :], num_legal_actions, axis=0)
 
         if len(self.history_action[(self.mypos + 1) % 4]) > 0:
             down_played_cards = card2array(reduce(lambda x, y: x+y, self.history_action[(self.mypos + 1) % 4]))    # 下家打过的牌， 54维
         else:
             down_played_cards = card2array([])
+        
+        # print(down_played_cards)
         down_played_cards_batch = np.repeat(down_played_cards[np.newaxis, :], num_legal_actions, axis=0)
 
         if len(self.history_action[(self.mypos + 2) % 4]) > 0:
             teammate_played_cards = card2array(reduce(lambda x, y: x+y, self.history_action[(self.mypos + 2) % 4]))    # 对家打过的牌
         else:
             teammate_played_cards = card2array([])
+        # print(teammate_played_cards)
         teammate_played_cards_batch = np.repeat(teammate_played_cards[np.newaxis, :], num_legal_actions, axis=0)
 
         if len(self.history_action[(self.mypos + 3) % 4]) > 0:
             up_played_cards = card2array(reduce(lambda x, y: x+y, self.history_action[(self.mypos + 3) % 4]))    # 上家打过的牌
         else:
             up_played_cards = card2array([])
+        # print(up_played_cards)
         up_played_cards_batch = np.repeat(up_played_cards[np.newaxis, :], num_legal_actions, axis=0)
  
         self_rank = _get_one_hot_array(RANK[message['selfRank']], 13, 0)         # 己方当前的级牌，13维
+        # print(self_rank)
         self_rank_batch = np.repeat(self_rank[np.newaxis, :], num_legal_actions, axis=0)
 
         oppo_rank = _get_one_hot_array(RANK[message['oppoRank']], 13, 0)         # 敌方当前的级牌
+        # print(oppo_rank)
+
         oppo_rank_batch = np.repeat(oppo_rank[np.newaxis, :], num_legal_actions, axis=0)
 
         cur_rank = _get_one_hot_array(RANK[message['curRank']], 13, 0)         # 当前的级牌
+        # print(cur_rank)
+
         cur_rank_batch = np.repeat(cur_rank[np.newaxis, :], num_legal_actions, axis=0)
 
         x_batch = np.hstack((my_handcards_batch,
+                        universal_card_flag_batch,
                         other_handcards_batch,
                         last_action_batch,
                         last_teammate_action_batch,
@@ -377,6 +437,7 @@ class MyClient(WebSocketClient):
                         cur_rank_batch,
                         my_action_batch))
         x_no_action = np.hstack((my_handcards,
+                            universal_card_flag,
                             other_handcards,
                             last_action,
                             last_teammate_action,
@@ -390,16 +451,10 @@ class MyClient(WebSocketClient):
                             oppo_rank,
                             cur_rank
                             ))
-        # z = _action_seq_list2array(_process_action_seq(self.action_seq))
-        # z_batch = np.repeat(z[np.newaxis, :, :], num_legal_actions, axis=0)
-
         obs = {
             'x_batch': x_batch.astype(np.float32),
-            # 'z_batch': z_batch.astype(np.float32),
             'legal_actions': legal_actions,
             'x_no_action': x_no_action.astype(np.float32),
-            # 'over': self.over,
-            # 'z': z.astype(np.float32),
           }
         return obs
 

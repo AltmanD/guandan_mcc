@@ -14,49 +14,33 @@ class MCAgent(Agent):
                  *args, **kwargs):
         # Define parameters
         self.lr = lr
+        self.lamda = 0.65
 
         self.policy_model = None
         self.loss = None
         self.train_q = None
 
         self.target_ph = utils.placeholder(shape=(1))
+        self.old_q = utils.placeholder(shape=(1))
 
         super(MCAgent, self).__init__(model_cls, observation_space, action_space, config, *args, **kwargs)
 
     def build(self) -> None:
         self.policy_model = self.model_instances[0]
-        self.loss = tf.reduce_mean((self.policy_model.values - self.target_ph) ** 2)
-        # self.train_q = AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
+        cliped_q = tf.clip_by_value(self.old_q / self.policy_model.values, 1-self.lamda, 1+self.lamda)
+        self.loss = tf.reduce_mean((cliped_q - self.target_ph) ** 2)
         self.train_q = tf.train.RMSPropOptimizer(learning_rate=self.lr, epsilon=1e-5).minimize(self.loss)
         self.policy_model.sess.run(tf.global_variables_initializer())
 
-    # def learn(self, training_data: Dict[str, np.ndarray], *args, **kwargs) -> None:
-    #     x_no_action, z, action, reward = [training_data[key] for key in ['x_no_action', 'z', 'action', 'reward']]
-    #     x_batch = np.concatenate([x_no_action, action], axis=-1)
-        
-    #     _, loss, values = self.policy_model.sess.run([self.train_q, self.loss, self.policy_model.values], 
-    #             feed_dict={
-    #                 self.policy_model.x_ph: x_batch,
-    #                 self.policy_model.z: z,
-    #                 self.target_ph: reward})
-
-    #     return {
-    #         'loss': loss,
-    #         'values': values
-    #     }
 
     def learn(self, training_data: Dict[str, np.ndarray], *args, **kwargs) -> None:
-        x_no_action, action, reward = [training_data[key] for key in ['x_no_action', 'action', 'reward']]
+        x_no_action, action, q, reward = [training_data[key] for key in ['x_no_action', 'action', 'q', 'reward']]
         x_batch = np.concatenate([x_no_action, action], axis=-1)
-        # x_no_action, z, action, reward = [training_data[key] for key in ['x_no_action', 'z', 'action', 'reward']]
-        # x_batch = np.concatenate([x_no_action, action], axis=-1)
-        # zeros = np.zeros([x_batch.shape[0], 128])
         
         _, loss, values = self.policy_model.sess.run([self.train_q, self.loss, self.policy_model.values], 
                 feed_dict={
                     self.policy_model.x_ph: x_batch,
-                    # self.policy_model.z: z,
-                    # self.policy_model.zero: zeros,
+                    self.old_q: q,
                     self.target_ph: reward})
         return {
             'loss': loss,

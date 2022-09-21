@@ -26,9 +26,9 @@ parser.add_argument('--param_port', type=int, default=5001,
                     help='Learner server port to subscribe model parameters')
 parser.add_argument('--exp_path', type=str, default='/home/root/log',
                     help='Directory to save logging data, model parameters and config file')
-parser.add_argument('--num_saved_ckpt', type=int, default=10,
+parser.add_argument('--num_saved_ckpt', type=int, default=4,
                     help='Number of recent checkpoint files to be saved')
-parser.add_argument('--observation_space', type=int, default=(555,),
+parser.add_argument('--observation_space', type=int, default=(567,),
                     help='The YAML configuration file')
 parser.add_argument('--action_space', type=int, default=(5, 216),
                     help='The YAML configuration file')
@@ -45,11 +45,12 @@ class Player():
         set_session(tf.Session(config=config))
 
         # 数据初始化
-        self.mb_states_no_action, self.mb_actions, self.mb_rewards = [], [], []
+        self.mb_states_no_action, self.mb_actions, self.mb_rewards, self.mb_q = [], [], [], []
         self.all_mb_states_no_action, self.all_mb_actions, self.all_mb_rewards = [], [], []
         self.args = args
         self.step = 0
         self.num_set_weight = 0
+        self.send_times = 1
 
         # 模型初始化
         self.model_id = -1
@@ -91,10 +92,12 @@ class Player():
             action_idx = np.random.randint(0, len(state['legal_actions']))
         else:
             action_idx = np.argmax(output)
+        q = output[action_idx]
         self.step += 1
         action = state['legal_actions'][action_idx]
         self.mb_states_no_action.append(state['x_no_action'])
         self.mb_actions.append(card2array(action))
+        self.mb_q.append(q)
         return action_idx
         
     def update_weight(self):
@@ -107,10 +110,12 @@ class Player():
         self.all_mb_states_no_action += self.mb_states_no_action
         self.all_mb_actions += self.mb_actions
         self.all_mb_rewards += self.mb_rewards
+        self.all_mb_q += self.all_mb_q
 
         self.mb_states_no_action = []
         self.mb_rewards = []
         self.mb_actions = []
+        self.all_mb_q = []
 
     def send_data(self, reward):
         # 调整数据格式并发送
@@ -119,24 +124,29 @@ class Player():
         self.socket.recv()
 
         # 打印log
-        logger.record_tabular("ep_step", self.step)
-        logger.dump_tabular()
+        if self.send_times % 10000 == 0:
+            self.send_times = 1
+            logger.record_tabular("ep_step", self.step)
+            logger.dump_tabular()
+        else:
+            self.send_times += 1
 
         # 重置数据存储
         self.step = 0
-        self.mb_states_no_action, self.mb_actions, self.mb_rewards = [], [], []
-        self.all_mb_states_no_action, self.all_mb_actions, self.all_mb_rewards = [], [], []
+        self.mb_states_no_action, self.mb_actions, self.mb_rewards, self.mb_q = [], [], [], []
+        self.all_mb_states_no_action, self.all_mb_actions, self.all_mb_rewards, self.all_mb_q = [], [], [], []
 
     def prepare_training_data(self, reward):
         states_no_action = np.asarray(self.all_mb_states_no_action)
         actions = np.asarray(self.all_mb_actions)
         rewards = np.asarray(self.all_mb_rewards)
+        q = np.asarray(self.all_mb_q)
         if reward[0] == 'y':
             rewards += 1
         else:
             rewards -= 1
-        data = [states_no_action, actions, rewards]
-        name = ['x_no_action', 'action', 'reward']
+        data = [states_no_action, actions, q, rewards]
+        name = ['x_no_action', 'action', 'q', 'reward']
         return dict(zip(name, data))
 
 

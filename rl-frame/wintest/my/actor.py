@@ -13,9 +13,11 @@ from tensorflow.keras.backend import set_session
 from model import GDModel
 
 parser = ArgumentParser()
-parser.add_argument('--observation_space', type=int, default=(555,),
+parser.add_argument('--observation_space', type=int, default=(567,),
                     help='The YAML configuration file')
 parser.add_argument('--action_space', type=int, default=(5, 216),
+                    help='The YAML configuration file')
+parser.add_argument('--model_id', type=int, default=150,
                     help='The YAML configuration file')
 
 class Player():
@@ -32,8 +34,8 @@ class Player():
         self.init_time = time.time()
 
         # 模型初始化
-        self.model  = GDModel((555, ), (5, 216))
-        with open('../model/fullplay45000.ckpt', 'rb') as f:
+        self.model  = GDModel(args.observation_space, (5, 216))
+        with open(f'/home/luyd/guandan/wintest/newversion/model/adduniversal{args.model_id}.ckpt', 'rb') as f:
             new_weights = pickle.load(f)
         self.model.set_weights(new_weights)
     
