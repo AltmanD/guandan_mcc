@@ -9,10 +9,12 @@ from pyarrow import deserialize, serialize
 class Game:
     def __init__(self) -> None:
         pygame.init()
+        self.cards_image_path = 'showdown/images/cards/'
+
         waiting_image_path = 'showdown/images/waiting.png'
-        screen = pygame.display.set_mode((900, 600), 0, 32)
+        self.screen = pygame.display.set_mode((900, 600), 0, 32)
         waitingImage = pygame.image.load(waiting_image_path).convert()
-        screen.blit(waitingImage, (0, 0))  # 画等待
+        self.screen.blit(waitingImage, (0, 0))  # 画等待
         pygame.display.update()
     
     def initInfo(self, message):
@@ -22,6 +24,18 @@ class Game:
         self.oppRank = message['oppoRank']
 
     def showhandCards(self):
+        print(self.my_handCards)
+        
+        for poker2 in a3:
+            if poker2 == '':
+
+                break
+            poker_outhand = pygame.image.load(
+                self.cards_image_path + poker2 + '.jpg').convert_alpha()
+            self.screen.blit(poker_outhand, (260 + x1, 430))
+            x1 += 20
+            # sleep(0.01)
+        pygame.display.update()
         pass
 
     def showpublicInfo(self):
