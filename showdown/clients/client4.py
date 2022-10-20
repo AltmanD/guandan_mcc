@@ -1,8 +1,10 @@
 import json
+from random import randint
+
 import zmq
 from pyarrow import deserialize, serialize
 from ws4py.client.threadedclient import WebSocketClient
-from random import randint
+
 
 class ExampleClient(WebSocketClient):
     def __init__(self, url):
@@ -31,7 +33,7 @@ class ExampleClient(WebSocketClient):
 
 if __name__ == '__main__':
     try:
-        ws = ExampleClient('ws://127.0.0.1:23456/game/client0')
+        ws = ExampleClient('ws://127.0.0.1:23456/game/client3')
         ws.connect()
         ws.run_forever()
     except KeyboardInterrupt:

@@ -1,4 +1,5 @@
 import sys
+from collections import defaultdict
 
 import pygame
 
@@ -27,7 +28,7 @@ import pygame
 #     screen.blit(ball, ballrect)
 #     pygame.display.flip()
 
-a = set(['PASS'])
-b = set([2,1,3,2])
+a = defaultdict(['H8','H8'])
+b = dict({'H8':0, 'D8':0, 'DT':1, 'DT':0, 'C8':0})
 print(a,b)
 print(a==b)

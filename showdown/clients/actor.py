@@ -35,7 +35,7 @@ class Player():
 
         # 模型初始化
         self.model  = GDModel(args.observation_space, (5, 216))
-        with open(f'/home/luyd/guandan/wintest/newversion/model/adduniversal{args.model_id}.ckpt', 'rb') as f:
+        with open('/home/luyd/guandan_mcc/showdown/clients/dan.ckpt', 'rb') as f:
             new_weights = pickle.load(f)
         self.model.set_weights(new_weights)
     
@@ -76,9 +76,9 @@ def main():
                         _p.terminate()
 
     players = []
-    for i in [1, 3]:
+    for i in [1, 2, 3]:
         print(f'start{i}')
-        p = Process(target=exit_wrapper, args=(i, args))
+        p = Process(target=exit_wrapper, args=(i-1, args))
         p.start()
         time.sleep(0.5)
         players.append(p)
