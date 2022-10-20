@@ -72,6 +72,7 @@ class Game:
 
     def showhandCards(self):    # 显示我方手牌及当前级数
         self.screen.blit(pygame.transform.scale(self.backgroundImage, (self.width, self.height)), (0, 0))
+        self.screen.blit(pygame.transform.scale(self.partback, (self.width, self.height/3)), (0, self.height*2/3))
         self.screen.blit(self.cardbackImage, (40, self.height/2-100))
         self.screen.blit(self.cardbackImage, (self.width-120, self.height/2-100))
         self.screen.blit(self.cardbackImage, (self.width/2-50, 30))
@@ -88,11 +89,9 @@ class Game:
         pygame.display.update()
 
     def showpublicInfo(self):
-
         print(self.publicInfo)
         for i in range(3):
             self.screen.blit(self.font.render(f"剩余{self.publicInfo[i]['rest']}张牌", True, (0,0,0)), self.texts_positions[i])
-
         if self.greaterPos == -1:
             for i, cpos in enumerate(self.cards_positions):
                 if i != 3:
@@ -105,7 +104,7 @@ class Game:
                             pokerImage = pygame.image.load(self.cards_image_path + poker + '.jpg').convert_alpha()
                             self.screen.blit(pokerImage, (cpos[0] + j*30, cpos[1]))
                     else:
-                        if i != 3 and self.publicInfo[i]['rest'] != 27:
+                        if i != 3 and self.publicInfo[0]['rest'] + self.publicInfo[1]['rest'] + self.publicInfo[2]['rest'] != 81:
                             self.screen.blit(self.font.render("PASS", True, (0,0,0)), cpos)
         pygame.display.update()
 
@@ -155,7 +154,6 @@ class Game:
             self.screen.blit(pygame.transform.scale(self.chupImage, (90, 40)), (self.width*2/3-30, self.height - 345))
             self.screen.blit(pygame.transform.scale(self.bucImage, (90, 40)), (self.width/3-30, self.height - 345))
             status_flag = 3
-        self.screen.blit(pygame.transform.scale(self.partback, (self.width, self.height/3)), (0, self.height*2/3))
         pygame.display.update()
 
         while action_index is None:
@@ -240,12 +238,12 @@ def run_one_player():
         if message['type'] == 'notify':
             if message['stage'] == 'beginning':
                 board.initInfo(message)
-            elif message['stage'] == 'tribute' or message['stage'] == 'back':
-                board.showTri_Back(message)
-                time.sleep(5)
+            elif message['stage'] == 'tribute':
+                board.recordTribute(message)
+            elif message['stage'] == 'back':
+                board.recordBack(message)
             elif message['stage'] == 'anti-tribute':
-                board.showAntiTribute(message)
-                time.sleep(5)
+                board.recordAntiTribute(message)
             elif message['stage'] == 'episodeOver':
                 board.showOver(message)
                 time.sleep(5)
