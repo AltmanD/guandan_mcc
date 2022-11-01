@@ -27,6 +27,7 @@ class Game:
         self.tributeflag = 0
         self.backflag = 0
         self.antiflag = 0
+        self.restflag = 0
 
         waiting_image_path = '/home/luyd/guandan_mcc/showdown/images/waiting.jpg'
         self.screen = pygame.display.set_mode((self.width, self.height), 0, 32)
@@ -106,7 +107,7 @@ class Game:
             if self.tributeflag == 1:
                 pokerImage = pygame.image.load(self.cards_image_path + self.tributeinfo[2] + '.jpg').convert_alpha()
                 self.screen.blit(pokerImage, self.cards_positions[self.tributeinfo[0]])
-                self.antiflag = 0
+                self.tributeflag = 0
             if self.backflag == 1:
                 pokerImage = pygame.image.load(self.cards_image_path + self.backinfo[2] + '.jpg').convert_alpha()
                 self.screen.blit(pokerImage, self.cards_positions[self.backinfo[0]])
@@ -127,6 +128,14 @@ class Game:
                     self.screen.blit(self.font.render("PASS", True, (0,0,0)), cpos)
         else:
             for i, (info, cpos) in enumerate(zip(self.publicInfo, self.cards_positions)):
+                # if info['rest'] == 0 and self.restflag == 0:
+                #     for j, poker in enumerate(info['playArea'][2]):
+                #         pokerImage = pygame.image.load(self.cards_image_path + poker + '.jpg').convert_alpha()
+                #         self.screen.blit(pokerImage, (cpos[0] + j*30, cpos[1]))
+                #     self.restflag == 1
+                # elif info['rest'] == 0 and self.restflag == 1:
+                #     self.screen.blit(self.font.render("PASS", True, (0,0,0)), cpos)
+                # elif info['rest'] != 0 and info['playArea'] != None:
                 if info['playArea'] != None:
                     if info['playArea'][0] != None and info['playArea'][0] != 'PASS':
                         for j, poker in enumerate(info['playArea'][2]):
