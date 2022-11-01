@@ -24,6 +24,9 @@ class Game:
         self.cardbackImage = pygame.image.load(self.cards_image_path + 'back.bmp')
         self.height = 900
         self.width = 1200
+        self.tributeflag = 0
+        self.backflag = 0
+        self.antiflag = 0
 
         waiting_image_path = '/home/luyd/guandan_mcc/showdown/images/waiting.jpg'
         self.screen = pygame.display.set_mode((self.width, self.height), 0, 32)
@@ -39,14 +42,23 @@ class Game:
         self.curRank = message['curRank']
         self.selfRank = message['selfRank']
         self.oppRank = message['oppoRank']
-    
+
+    def recordTribute(self, message):
+        self.tributeflag = 1
+        self.tributeinfo = message['result'][0]
+        
+    def recordBack(self, message):
+        self.backflag = 1
+        self.backinfo = message['result'][0]
+
+    def recordAntiTribute(self, message):
+        self.antiflag = 1
+        self.antiinfo = message
+
     def showTri_Back(self, message):
         pokerImage = pygame.image.load(self.cards_image_path + message['result'][0][2] + '.jpg').convert_alpha()
         self.screen.blit(pokerImage, self.cards_positions[message['result'][0][0]])
         pygame.display.update()
-
-    def showAntiTribute(self, message):
-        pass
 
     def showOver(self, message):
         self.screen.blit(pygame.transform.scale(self.backgroundImage, (self.width, self.height)), (0, 0))
@@ -90,6 +102,23 @@ class Game:
 
     def showpublicInfo(self):
         print(self.publicInfo)
+        if self.tributeflag == 1 or self.backflag == 1 or self.antiflag == 1:
+            if self.tributeflag == 1:
+                pokerImage = pygame.image.load(self.cards_image_path + self.tributeinfo[2] + '.jpg').convert_alpha()
+                self.screen.blit(pokerImage, self.cards_positions[self.tributeinfo[0]])
+                self.antiflag = 0
+            if self.backflag == 1:
+                pokerImage = pygame.image.load(self.cards_image_path + self.backinfo[2] + '.jpg').convert_alpha()
+                self.screen.blit(pokerImage, self.cards_positions[self.backinfo[0]])
+                self.backflag = 0
+            if self.antiflag == 1:
+                self.screen.blit(self.font.render(f"{self.antiinfo['antiPos']} 号玩家抗贡", True, (0,0,0)), (self.width/2-50, self.height/2-50))
+                self.antiflag = 0
+                pass
+            pygame.display.update()
+            time.sleep(5)
+
+        self.showhandCards()
         for i in range(3):
             self.screen.blit(self.font.render(f"剩余{self.publicInfo[i]['rest']}张牌", True, (0,0,0)), self.texts_positions[i])
         if self.greaterPos == -1:

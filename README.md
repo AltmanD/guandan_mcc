@@ -2,6 +2,8 @@
 ## Insatll 
 ### lib needs:
 
+linux20.04
+
 python=3.8
 
 tensorflow=1.15.5
@@ -24,3 +26,37 @@ pyzmq=22.3.0
 ## Eval
 
 `bash wintest/testmodel.sh`
+
+## Showdown
+
+follow these steps:
+
+in terminal1
+
+`cd guandan_mcc/showdown`
+
+`./guandan 1`
+
+in terminal2
+
+`cd guandan_mcc/showdown/clients`
+
+`python3 client1.py &`
+
+`python3 client2.py &`
+
+`python3 client3.py &`
+
+in terminal3
+
+`python3 client4.py &`
+
+in terminal2
+
+`python3 actor.py`
+
+in terminal3
+
+`python3 showdown_actor.py`
+
+and have fun!
