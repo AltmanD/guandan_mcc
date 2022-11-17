@@ -20,15 +20,15 @@ def mlp(x, hidden_sizes=(32,), activation=tf.tanh, output_activation=None):
 
 
 class GDPPOModel():
-    def __init__(self, observation_space, action_space, config=None, model_id='0', session=None):
+    def __init__(self, observation_space, max_action_space=5000, config=None, model_id='0', session=None):
         with tf.variable_scope(model_id):
-            self.x_ph = placeholder(shape=observation_space, dtype='uint8')
-            self.x_s_ph = tf.expand_dims(self.x_ph[0, :-54], axis=0)
+            self.x_ph = placeholder(shape=observation_space, dtype=tf.float32)
+            self.x_s_ph = tf.expand_dims(self.x_ph[:, 0, :-54], axis=0)
             self.a_ph = placeholder(dtype=tf.int32)
-            self.legal_action = tf.placeholder(dtype='uint8', shape=(action_space, )) 
+            self.legal_actions = placeholder(dtype=tf.float32, shape=(max_action_space, )) 
 
         self.logits = None
-        self.vf = None
+        self.value = None
         self.legalshape = None
 
         # Initialize Tensorflow session
@@ -38,7 +38,7 @@ class GDPPOModel():
         
         self.scope = model_id
         self.observation_space = observation_space
-        self.action_space = action_space
+        self.action_space = None
         self.model_id = model_id
         self.config = config
 
@@ -90,22 +90,21 @@ class GDPPOModel():
         self._nodes = list(self._to_assign.values())
 
     def forward(self, x_batch, legal_action):
-        return self.sess.run([self.action, self.value, self.neglogp, self.logits], feed_dict={self.x_ph: x_batch, })
+        return self.sess.run([self.action, self.value, self.neglogp], feed_dict={self.x_ph: x_batch, self.legal_actions: legal_action})
 
     def build(self) -> None:
         with tf.variable_scope(self.scope):
             with tf.variable_scope('p'):
-                logits_without_mask = mlp(self.x_ph, [512, 512, 512, 512, 512, self.action_space], activation='tanh', output_activation=None)
-                self.logits = logits_without_mask * self.legal_action
+                logits_without_mask = tf.squeeze(mlp(self.x_ph, [512, 512, 512, 512, 512, 1], activation='tanh', output_activation=None), axis=-1)
+                self.logits = logits_without_mask - (1-self.legal_actions) * 1e6
  
             with tf.variable_scope('v'):
-                self.value = mlp(self.x_s_ph, [512, 512, 512, 512, 512, 1], activation='tanh', output_activation=None)
+                self.value = [tf.squeeze(mlp(self.x_s_ph, [512, 512, 512, 512, 512, 1], activation='tanh', output_activation=None))]
 
 
 class CategoricalPd:
     def __init__(self, logits):
         self.logits = logits
-        print(self.logits)
 
     def mode(self):
         return tf.argmax(self.logits, axis=-1)
@@ -155,12 +154,22 @@ class CategoricalPd:
 
 
 if __name__ == '__main__':
-    policy = CategoricalPd()
+    policy = GDPPOModel((5000, 567, ))
     state = np.random.random((513, ))
     action1 = np.random.random((54, ))
     action2 = np.random.random((54, ))
     action3 = np.random.random((54, ))
+    legal_action = np.asarray([1,1,0,0])
+    test = np.random.random((4,567,))
     # print(np.concatenate((state,action1), axis=0))
-    res = policy.forward([np.concatenate((state,action1), axis=0), np.concatenate((state,action2), axis=0), np.concatenate((state,action3), axis=0)])
-    print(res)
+    
+    b = np.load("/home/luyd/guandan_mcc/rl-frame/learner_ppo/test.npy", allow_pickle=True).item()
+    state = b['x_batch'][-9]
+    legal_action = b['legal_indexs'][-9]
+    np.set_printoptions(threshold=np.inf)
+    print(state[0])
+    print(state.shape, np.sum(state[:,:513], axis=-1)[:7], sum(legal_action))
+    # res = policy.forward([state], [legal_action])
+    # res = policy.forward([test],legal_action)
+    # print(res)
     # print(policy.forward([np.random.random((567, )), np.random.random((567, ))]))

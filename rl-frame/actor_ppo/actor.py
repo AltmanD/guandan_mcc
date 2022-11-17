@@ -8,10 +8,9 @@ from statistics import mean
 import numpy as np
 import tensorflow as tf
 import zmq
+from model import GDPPOModel
 from pyarrow import deserialize, serialize
 from tensorflow.keras.backend import set_session
-
-from model import GDModel
 from utils import logger
 from utils.data_trans import (create_experiment_dir, find_new_weights,
                               run_weights_subscriber)
@@ -24,11 +23,11 @@ parser.add_argument('--data_port', type=int, default=5000,
                     help='Learner server port to send training data')
 parser.add_argument('--param_port', type=int, default=5001,
                     help='Learner server port to subscribe model parameters')
-parser.add_argument('--exp_path', type=str, default='/home/root/log',
+parser.add_argument('--exp_path', type=str, default='/home/luyd/log',
                     help='Directory to save logging data, model parameters and config file')
 parser.add_argument('--num_saved_ckpt', type=int, default=4,
                     help='Number of recent checkpoint files to be saved')
-parser.add_argument('--observation_space', type=int, default=(567,),
+parser.add_argument('--observation_space', type=int, default=(5000, 567),
                     help='The YAML configuration file')
 parser.add_argument('--action_space', type=int, default=(5, 216),
                     help='The YAML configuration file')
@@ -45,8 +44,8 @@ class Player():
         set_session(tf.Session(config=config))
 
         # 数据初始化
-        self.mb_states_no_action, self.mb_actions, self.mb_rewards, self.mb_q = [], [], [], []
-        self.all_mb_states_no_action, self.all_mb_actions, self.all_mb_rewards = [], [], []
+        self.mb_states, self.mb_legal_indexs, self.mb_rewards, self.mb_actions, self.mb_dones, self.mb_values, self.mb_neglogp = [], [], [], [], [], [], []
+        self.all_mb_states, self.all_mb_legal_indexs, self.all_mb_rewards, self.all_mb_actions, self.all_mb_dones, self.all_mb_values, self.all_mb_neglogp = [], [], [], [], [], [], []
         self.args = args
         self.step = 0
         self.num_set_weight = 0
@@ -54,7 +53,7 @@ class Player():
 
         # 模型初始化
         self.model_id = -1
-        self.model  = GDModel(self.args.observation_space, (5, 216))
+        self.model  = GDPPOModel(self.args.observation_space)
 
         # 连接learner
         context = zmq.Context()
@@ -76,29 +75,24 @@ class Player():
         subscriber.start()
 
         # 初始化模型
-        print('set weight start')
-        model_init_flag = 0
-        while model_init_flag == 0:
-            new_weights, self.model_id = find_new_weights(-1, self.args.ckpt_path)
-            if new_weights is not None:
-                self.model.set_weights(new_weights)
-                self.num_set_weight += 1
-                model_init_flag = 1
-        print('set weight success') 
+        # print('set weight start')
+        # model_init_flag = 0
+        # while model_init_flag == 0:
+        #     new_weights, self.model_id = find_new_weights(-1, self.args.ckpt_path)
+        #     if new_weights is not None:
+        #         self.model.set_weights(new_weights)
+        #         self.num_set_weight += 1
+        #         model_init_flag = 1
+        # print('set weight success') 
 
     def sample(self, state) -> int:
-        output = self.model.forward(state['x_batch'])
-        if self.args.epsilon > 0 and np.random.rand() < self.args.epsilon:
-            action_idx = np.random.randint(0, len(state['legal_actions']))
-        else:
-            action_idx = np.argmax(output)
-        q = output[action_idx]
-        self.step += 1
-        action = state['legal_actions'][action_idx]
-        self.mb_states_no_action.append(state['x_no_action'])
-        self.mb_actions.append(card2array(action))
-        self.mb_q.append(q)
-        return action_idx
+        action, value, neglogp = self.model.forward([state['x_batch']], [state['legal_index']])
+        self.mb_states.append(state['x_batch'])
+        self.mb_legal_indexs.append(state['legal_index'])
+        self.mb_actions.append(action)
+        self.mb_values.append(value)
+        self.mb_neglogp.append(neglogp)
+        return action
         
     def update_weight(self):
         new_weights, self.model_id = find_new_weights(self.model_id, self.args.ckpt_path)
@@ -106,20 +100,24 @@ class Player():
             self.model.set_weights(new_weights)
 
     def save_data(self, reward):
-        self.mb_rewards = [[reward] for _ in range(len(self.mb_states_no_action))]
-        self.all_mb_states_no_action += self.mb_states_no_action
-        self.all_mb_actions += self.mb_actions
+        self.mb_rewards = [[reward] for _ in range(len(self.mb_states))]
+        self.mb_dones = [[0] for _ in range(len(self.mb_states))]
+        self.mb_dones[-1] = [1]
+        self.all_mb_states += self.mb_states
+        self.all_mb_legal_indexs += self.mb_legal_indexs
         self.all_mb_rewards += self.mb_rewards
-        self.all_mb_q += self.all_mb_q
+        self.all_mb_actions += self.mb_actions
+        self.all_mb_dones += self.mb_dones
+        self.all_mb_values += self.mb_values
+        self.all_mb_neglogp += self.mb_neglogp
 
-        self.mb_states_no_action = []
-        self.mb_rewards = []
-        self.mb_actions = []
-        self.all_mb_q = []
+        self.mb_states, self.mb_legal_indexs, self.mb_rewards, self.mb_actions, self.mb_dones, self.mb_values, self.mb_neglogp = [], [], [], [], [], [], []
 
     def send_data(self, reward):
         # 调整数据格式并发送
         data = self.prepare_training_data(reward)
+        np.save('test.npy', data)
+        print('save success!')
         self.socket.send(serialize(data).to_buffer())
         self.socket.recv()
 
@@ -133,20 +131,53 @@ class Player():
 
         # 重置数据存储
         self.step = 0
-        self.mb_states_no_action, self.mb_actions, self.mb_rewards, self.mb_q = [], [], [], []
-        self.all_mb_states_no_action, self.all_mb_actions, self.all_mb_rewards, self.all_mb_q = [], [], [], []
+        self.mb_states, self.mb_legal_indexs, self.mb_rewards, self.mb_actions, self.mb_dones, self.mb_values, self.mb_neglogp = [], [], [], [], [], [], []
+        self.all_mb_states, self.all_mb_legal_indexs, self.all_mb_rewards, self.all_mb_actions, self.all_mb_dones, self.all_mb_values, self.all_mb_neglogp = [], [], [], [], [], [], []
 
     def prepare_training_data(self, reward):
-        states_no_action = np.asarray(self.all_mb_states_no_action)
-        actions = np.asarray(self.all_mb_actions)
+        # Hyperparameters
+        gamma  =  0.99
+        lam    =  0.95
+
+        states = np.asarray(self.all_mb_states)
+        legal_indexs = np.asarray(self.all_mb_legal_indexs)
         rewards = np.asarray(self.all_mb_rewards)
-        q = np.asarray(self.all_mb_q)
+        actions = np.asarray(self.all_mb_actions)
+        dones = np.asarray(self.all_mb_dones)
+        values = np.asarray(self.all_mb_values)
+        neglogps = np.asarray(self.all_mb_neglogp)
+        print(states.shape)
+        print(legal_indexs.shape)
+        print(rewards.shape)
+        print(actions.shape)
+        print(dones.shape)
+        print(values.shape)
+        print(neglogps.shape)
         if reward[0] == 'y':
             rewards += 1
         else:
             rewards -= 1
-        data = [states_no_action, actions, q, rewards]
-        name = ['x_no_action', 'action', 'q', 'reward']
+
+        values = np.concatenate([values, [[0.0]]])
+        deltas   =  rewards + gamma * values[1:] * (1.0 - dones) - values[:-1]
+        
+        nsteps     =  len(states)
+        advs    =  np.zeros_like(rewards)
+        lastgaelam =  0
+        for t in reversed(range(nsteps)):
+            nextnonterminal = 1.0 - dones[t]
+            advs[t] = lastgaelam = deltas[t] + gamma * lam * nextnonterminal * lastgaelam
+            
+        def sf01(arr):
+            """
+            swap and then flatten axes 0 and 1
+            """
+            s = arr.shape
+            return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
+        
+        returns = advs + values[:-1]
+        data = [states, legal_indexs] + [sf01(arr) for arr in [returns, actions, values, neglogps]]
+        name = ['x_batch', 'legal_indexs', 'returns', 'actions', 'values', 'neglogps']
         return dict(zip(name, data))
 
 

@@ -20,15 +20,16 @@ def mlp(x, hidden_sizes=(32,), activation=tf.tanh, output_activation=None):
 
 
 class GDPPOModel():
-    def __init__(self, observation_space, config=None, model_id='0', session=None):
+    def __init__(self, observation_space, max_action_space=5000, config=None, model_id='0', session=None):
         with tf.variable_scope(model_id):
-            self.x_ph = placeholder(shape=observation_space)
-            self.x_s_ph = tf.expand_dims(self.x_ph[0, :-54], axis=0)
+            self.x_ph = placeholder(shape=observation_space, dtype=tf.float32)
+            self.x_s_ph = tf.expand_dims(self.x_ph[:, 0, :-54], axis=0)
             self.a_ph = placeholder(dtype=tf.int32)
+            self.legal_actions = placeholder(dtype=tf.float32, shape=(max_action_space, )) 
 
-        # 输出张量
         self.logits = None
         self.value = None
+        self.legalshape = None
 
         # Initialize Tensorflow session
         if session is None:
@@ -37,6 +38,7 @@ class GDPPOModel():
         
         self.scope = model_id
         self.observation_space = observation_space
+        self.action_space = None
         self.model_id = model_id
         self.config = config
 
@@ -55,6 +57,12 @@ class GDPPOModel():
 
         # Build saver
         self.saver = tf.train.Saver(tf.trainable_variables())
+
+        pd = CategoricalPd(self.logits)
+        self.action = pd.sample()
+        self.neglogp = pd.neglogp(self.action)
+        self.neglogp_a = pd.neglogp(self.a_ph)
+        self.entropy = pd.entropy()
 
         # 参数初始化
         self.sess.run(tf.global_variables_initializer())    
@@ -81,62 +89,30 @@ class GDPPOModel():
             self._to_assign[var.name] = var.assign(self._weight_ph[var.name])
         self._nodes = list(self._to_assign.values())
 
-    def forward(self, x_batch):
-        self.logits, self.value = self.sess.run([self.logits, self.value], feed_dict={self.x_ph: x_batch})
-        self.logits = tf.convert_to_tensor(np.expand_dims(self.logits.flatten(), axis=0))
-        # print(self.logits)
-        self.action = self.sample()
-        self.neglogp = self.Neglogp(self.action)
-        action, neglogp = self.sess.run([self.action, self.neglogp])
-        return action, self.value, neglogp
-        return self.sess.run([self.logits, self.value], feed_dict={self.x_ph: x_batch})
+    def forward(self, x_batch, legal_action):
+        return self.sess.run([self.action, self.value, self.neglogp], feed_dict={self.x_ph: x_batch, self.legal_actions: legal_action})
 
     def build(self) -> None:
         with tf.variable_scope(self.scope):
             with tf.variable_scope('p'):
-                self.logits = mlp(self.x_ph, [512, 512, 512, 512, 512, 1], activation='tanh',
-                                            output_activation=None)
+                self.logits = tf.squeeze(mlp(self.x_ph, [512, 512, 512, 512, 512, 1], activation='tanh', output_activation=None), axis=-1)
+                # self.logits = logits_without_mask - (1-self.legal_actions) * 1e6
+ 
             with tf.variable_scope('v'):
-                self.value = mlp(self.x_s_ph, [512, 512, 512, 512, 512, 1], activation='tanh',
-                                            output_activation=None)
+                self.value = [tf.squeeze(mlp(self.x_s_ph, [512, 512, 512, 512, 512, 1], activation='tanh', output_activation=None))]
 
 
 class CategoricalPd:
-    def __init__(self, session=None):
-        self.model = GDPPOModel(observation_space=(567, ))
-        self.logits = None
-        if session is None:
-            session = get_session()
-        self.sess = session
-
-    def forward(self, x_batch):
-        self.logits, value = self.model.forward(x_batch)
-        self.logits = tf.convert_to_tensor(np.expand_dims(self.logits.flatten(), axis=0))
-        # print(self.logits)
-        self.action = self.sample()
-        self.neglogp = self.Neglogp(self.action)
-        action, neglogp = self.sess.run([self.action, self.neglogp])
-        return action, value, neglogp
-
-    def set_weights(self, weights) -> None:
-        self.model.set_weights(weights)
-
-    def get_weights(self):
-        return self.model.get_weights()
-
-    def save(self, path):
-        self.model.save(path)
-
-    def load(self, path):
-        self.model.load(path)
+    def __init__(self, logits):
+        self.logits = logits
 
     def mode(self):
         return tf.argmax(self.logits, axis=-1)
 
     def logp(self, x):
-        return -self.Neglogp(x)
+        return -self.neglogp(x)
 
-    def Neglogp(self, x):
+    def neglogp(self, x):
         # return tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=x)
         # Note: we can't use sparse_softmax_cross_entropy_with_logits because
         #       the implementation does not allow second-order derivatives...
@@ -175,14 +151,3 @@ class CategoricalPd:
     def sample(self):
         u = tf.random_uniform(tf.shape(self.logits), dtype=self.logits.dtype)
         return tf.argmax(self.logits - tf.log(-tf.log(u)), axis=-1)
-
-if __name__ == '__main__':
-    policy = CategoricalPd()
-    state = np.random.random((513, ))
-    action1 = np.random.random((54, ))
-    action2 = np.random.random((54, ))
-    action3 = np.random.random((54, ))
-    # print(np.concatenate((state,action1), axis=0))
-    res = policy.forward([np.concatenate((state,action1), axis=0), np.concatenate((state,action2), axis=0), np.concatenate((state,action3), axis=0)])
-    print(res)
-    # print(policy.forward([np.random.random((567, )), np.random.random((567, ))]))

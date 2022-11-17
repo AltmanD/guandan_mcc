@@ -13,9 +13,8 @@ from multiprocessing import Process
 from random import randint
 
 import zmq
-from ws4py.client.threadedclient import WebSocketClient
-
 from utils.utils import *
+from ws4py.client.threadedclient import WebSocketClient
 
 warnings.filterwarnings("ignore")
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -71,6 +70,7 @@ class MyClient(WebSocketClient):
         self.other_left_hands = [2 for _ in range(54)]
         self.flag = 0
         self.over = []
+        self.max_acion = 5000
 
         # 初始化zmq
         self.context = zmq.Context()
@@ -209,13 +209,11 @@ class MyClient(WebSocketClient):
                     for ele in init_hand:
                         self.other_left_hands[ele] -= 1
                     self.flag = 1
-
                 # 准备状态数据
                 if len(message['actionList']) == 1:
                     self.send(json.dumps({"actIndex": 0}))
                 else :
                     state = self.prepare(message)
-                    # state = self.prepare(message)
                     # 传输给决策模块
                     self.socket.send(serialize(state).to_buffer())
                     # 收到决策
@@ -451,10 +449,14 @@ class MyClient(WebSocketClient):
                             oppo_rank,
                             cur_rank
                             ))
+        if num_legal_actions < self.max_acion:
+            x_batch = np.concatenate((x_batch, np.zeros((self.max_acion-num_legal_actions, 567), dtype=np.int8)))
+            legal_index = np.concatenate((np.ones(num_legal_actions, dtype=np.int8), np.zeros(self.max_acion-num_legal_actions, dtype=np.int8)))
         obs = {
             'x_batch': x_batch.astype(np.float32),
-            'legal_actions': legal_actions,
-            'x_no_action': x_no_action.astype(np.float32),
+            # 'legal_actions': legal_actions,
+            'legal_index': legal_index,
+            # 'x_no_action': x_no_action.astype(np.float32),
           }
         return obs
 

@@ -1,11 +1,12 @@
-
 import inspect
 import warnings
+from collections import defaultdict
 from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
 import utils.model_utils as utils
+from model import GDPPOModel
 
 
 class PPOAgent():
@@ -29,7 +30,7 @@ class PPOAgent():
 
         # Model related objects
         self.model = model
-        self.sess = None
+        self.sess = self.model.sess
         self.train_op = None
         self.pg_loss = None
         self.vf_loss = None
@@ -52,10 +53,10 @@ class PPOAgent():
     def build(self) -> None:
         self.entropy = tf.reduce_mean(self.model.entropy)
 
-        vpredclipped = self.old_v_ph + tf.clip_by_value(self.model.vf - self.old_v_ph, -self.clip_range,
+        vpredclipped = self.old_v_ph + tf.clip_by_value(self.model.value - self.old_v_ph, -self.clip_range,
                                                         self.clip_range)
         # Unclipped value
-        vf_losses1 = tf.square(self.model.vf - self.return_ph)
+        vf_losses1 = tf.square(self.model.value - self.return_ph)
         # Clipped value
         vf_losses2 = tf.square(vpredclipped - self.return_ph)
         self.vf_loss = 0.5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
@@ -67,9 +68,8 @@ class PPOAgent():
         pg_losses = -self.advantage_ph * ratio
         pg_losses2 = -self.advantage_ph * tf.clip_by_value(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range)
 
-        # Final PG loss        
+        # Final PG loss
         self.pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
-
 
         # Total loss
         loss = self.pg_loss - self.entropy * self.ent_coef + self.vf_loss * self.vf_coef
@@ -89,22 +89,62 @@ class PPOAgent():
         grads_and_var = list(zip(grads, var))
 
         self.train_op = trainer.apply_gradients(grads_and_var)
-        self.sess = self.model.sess
         # Initialize variables
         self.sess.run(tf.global_variables_initializer())
 
-    def learn(self, training_data: Dict[str, np.ndarray], *args, **kwargs) -> None:
-        x_no_action, action, q, reward = [training_data[key] for key in ['x_no_action', 'action', 'q', 'reward']]
-        x_batch = np.concatenate([x_no_action, action], axis=-1)
-        
-        _, loss, values = self.policy_model.sess.run([self.train_q, self.loss, self.policy_model.values], 
-                feed_dict={
-                    self.policy_model.x_ph: x_batch,
-                    self.old_q: q,
-                    self.target_ph: reward})
+    def learn(self, training_data, *args, **kwargs):
+        '''
+        in guandan:
+        state   :  (?, 5000, 567)
+        return  :  (?,)
+        action  :  (?,)
+        value   :  (?,)
+        neglogp :  (?,)
+        ues one slice every time
+        '''
+        data = [training_data[key] for key in ['x_batch', 'legal_indexs', 'returns', 'actions', 'values', 'neglogps']]
+        nbatch = len(data[0])
+        nbatch_train = nbatch // self.nminibatches
+
+        inds = np.arange(nbatch)        
+        stats = defaultdict(list)
+        for _ in range(self.epochs):
+            np.random.shuffle(inds)
+            for start in range(0, nbatch, nbatch_train):
+                end = start + nbatch_train
+                mbinds = inds[start:end]
+                slices = (arr[mbinds] for arr in data)                
+                ret = self.train(*slices)
+
+                for k, v in ret.items():
+                    stats[k].append(v)
+
+        return {k: np.array(v).mean() for k, v in stats.items()}
+        # return {k: np.array(v) for k, v in stats.items()}
+
+
+    def train(self, obs, legal_actions, returns, actions, values, neglogps):
+        advs = returns - values
+        advs = (advs - advs.mean()) / (advs.std() + 1e-8)
+
+        td_map = {
+            self.model.x_ph: obs,
+            self.model.a_ph: actions,
+            self.model.legal_actions: legal_actions,
+            self.advantage_ph: advs,
+            self.return_ph: returns,
+            self.lr_ph: self.lr,
+            self.old_neglogp_ph: neglogps,
+            self.old_v_ph: values
+        }
+        _, pg_loss, vf_loss, entropy, clip_rate, kl = self.sess.run(
+            [self.train_op, self.pg_loss, self.vf_loss, self.entropy, self.clip_rate, self.kl], td_map)
         return {
-            'loss': loss,
-            'values': values
+            'pg_loss': pg_loss,
+            'vf_loss': vf_loss,
+            'entropy': entropy,
+            'clip_rate': clip_rate,
+            'kl': kl,
         }
 
     def set_weights(self, weights, *args, **kwargs) -> None:
@@ -194,3 +234,13 @@ def get_config_params(obj_or_cls) -> List[str]:
             config_params.append(param)
 
     return config_params
+
+
+if __name__ == '__main__':
+    model = GDPPOModel((5000, 567, ))
+    danagent = PPOAgent(model)
+
+    b = np.load("/home/luyd/guandan_mcc/rl-frame/learner_ppo/test.npy", allow_pickle=True).item()
+
+    res = danagent.learn(b)
+    print(res)
